@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DocBot</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image/png" href="favicon_icon.png">
+</head>
+<body>
+    <div class="app-container">
+        <header class="app-header">
+            <div class="header-left">
+                <div class="app-logo header-bot-avatar"></div>
+                <div class="app-title">
+                    <h1>DocBot AI</h1>
+                    <p>Your smart assistant for documents</p>
+                </div>
+            </div>
+            <div class="header-actions">
+                <button class="btn" id="newChatBtn">New chat</button>
+                <button class="btn" id="exportChatBtn">Export chat</button>
+                <div class="status-indicator waiting" id="statusIndicator">
+                    Waiting for document
+                </div>
+                <button class="btn btn-secondary" id="themeToggleBtn">Dark mode</button>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <section class="chat-section">
+                <div class="chat-header">
+                    <h3>Conversation</h3>
+                </div>
+                
+                <div class="chat-messages" id="chatMessages">
+                    <div class="welcome-screen" id="welcomeScreen">
+                        <div class="welcome-icon"></div>
+                        <h3 class="welcome-title">Ready to chat!</h3>
+                        <p class="welcome-text">Upload a document (PDF, Word, TXT, Markdown) and start asking questions</p>
+                    </div>
+                </div>
+
+                <div class="input-area">
+                    <div class="input-container">
+                        <textarea 
+                            class="message-input" 
+                            id="messageInput" 
+                            placeholder="Upload a document to start chatting..."
+                            disabled
+                            rows="1"
+                        ></textarea>
+                        <button class="send-btn" id="sendBtn" disabled>Send</button>
+                    </div>
+                    <div class="input-meta">
+                        <span id="charCounter">0</span> characters
+                        <button class="btn btn-secondary" id="copyLastBtn" disabled>Copy last answer</button>
+                        <button class="btn btn-secondary" id="regenBtn" disabled>Regenerate</button>
+                    </div>
+                </div>
+            </section>
+
+            <aside class="sidebar">
+                <div class="panel">
+                    <h3>History</h3>
+                    <div class="history-actions">
+                        <button class="btn btn-secondary" id="saveChatBtn">Save chat</button>
+                        <button class="btn btn-secondary" id="deleteChatBtn" disabled>Delete selected</button>
+                    </div>
+                    <ul class="history-list" id="historyList"></ul>
+                </div>
+                <div class="panel">
+                    <h3>Document</h3>
+                    <div class="file-drop-zone" onclick="document.getElementById('fileInput').click()">
+                        <div class="drop-icon"></div>
+                        <div class="drop-text">Drag & drop your document</div>
+                        <div class="drop-subtext">or click to select (PDF, DOCX, DOC, TXT, MD)</div>
+                    </div>
+                    
+                    <input type="file" id="fileInput" class="file-input" accept=".pdf,.doc,.docx,.txt,.md,.markdown,.rtf,.odt">
+                    
+                    <div class="file-info" id="fileInfo">
+                        <div class="file-name" id="fileName"></div>
+                        <div class="file-size" id="fileSize"></div>
+                    </div>
+                    
+                    <div class="processing-indicator" id="processingIndicator">
+                        <div class="spinner"></div>
+                        <span>Processing...</span>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h3>Suggested questions</h3>
+                    <div class="quick-actions">
+                        <button class="quick-btn" onclick="askQuestion('Summarize the main points')">Summarize</button>
+                        <button class="quick-btn" onclick="askQuestion('What are the key takeaways?')">Key takeaways</button>
+                        <button class="quick-btn" onclick="askQuestion('What is the main topic of the document?')">Main topic</button>
+                        <button class="quick-btn" onclick="askQuestion('How many pages are there?')">Page count</button>
+                        <button class="quick-btn" onclick="askQuestion('List important terms mentioned')">Important terms</button>
+                        <button class="quick-btn" onclick="askQuestion('Give examples referenced in the document')">Examples</button>
+                        <button class="quick-btn" onclick="askQuestion('Which sections should I focus on?')">Focus sections</button>
+                    </div>
+                </div>
+            </aside>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>
