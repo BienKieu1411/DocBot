@@ -3,11 +3,97 @@ class DocBotApp {
         this.fileUploaded = false;
         this.isProcessing = false;
         this.chatHistory = [];
+        this.currentFile = null;
+        this.authManager = null;
+        this.chatStorage = null;
+        this.currentChatId = null;
+        
+        this.initAuthAndApp();
+    }
+
+    async initAuthAndApp() {
+        // Wait for AuthManager to be available
+        if (typeof AuthManager !== 'undefined') {
+            this.authManager = new AuthManager();
+            this.chatStorage = new ChatStorage();
+        }
+        
+        await this.initializeApp();
+    }
+
+    async initializeApp() {
+        // Initialize auth manager
+        if (this.authManager) {
+            const isLoggedIn = await this.authManager.init();
+            if (!isLoggedIn) {
+                // Nếu chưa đăng nhập thì set chế độ guest
+                this.authManager.isGuest = true;
+            }
+        } else {
+            // Nếu không có authManager, assume guest mode
+            this.authManager = {
+                isLoggedIn: () => false,
+                isGuest: true,
+                canSaveChat: () => false,
+                currentUser: null
+            };
+        }
+        
+        // Set up chat storage
+        if (!this.chatStorage) {
+            this.chatStorage = {
+                saveChat: () => ({ success: false, error: 'Please sign in to save chat' }),
+                getChats: () => ({ success: false, error: 'Please sign in to view chat history' }),
+                updateChatTitle: () => ({ success: false, error: 'Please sign in to update chat' }),
+                deleteChat: () => ({ success: false, error: 'Please sign in to delete chat' })
+            };
+        }
+        
+        // If Supabase is not configured, show demo mode message
+        if (typeof isSupabaseConfigured !== 'undefined' && !isSupabaseConfigured) {
+            // Running in demo mode - Supabase not configured
+        }
+        
+        this.updateUserInterface();
+        await this.loadChatHistory();
         this.initializeEventListeners();
         this.setupAutoResize();
     }
 
+    updateUserInterface() {
+        const userInfo = document.getElementById('userInfo');
+        const userEmail = document.getElementById('userEmail');
+        const saveChatBtn = document.getElementById('saveChatBtn');
+        const historyInfo = document.getElementById('historyInfo');
+
+        if (this.authManager.isLoggedIn() && !this.authManager.isGuest) {
+            userInfo.style.display = 'flex';
+            userEmail.textContent = this.authManager.currentUser.email;
+            if (saveChatBtn) {
+                saveChatBtn.style.display = 'inline-block';
+                saveChatBtn.disabled = false;
+                saveChatBtn.classList.add('active-save-btn');
+            }
+            historyInfo.innerHTML = '<small class="success-msg">Chats will be saved automatically</small>';
+        } else {
+            userInfo.style.display = 'none';
+            if (saveChatBtn) {
+                saveChatBtn.style.display = 'none';
+            }
+            historyInfo.innerHTML = '<small class="warn-msg">Sign in to save chats</small>';
+        }
+    }
+
     initializeEventListeners() {
+        // User info logout button
+        const userLogoutBtn = document.getElementById('userLogoutBtn');
+        if (userLogoutBtn) {
+            userLogoutBtn.addEventListener('click', () => {
+                this.handleLogout();
+            });
+        }
+
+        // Main app events
         const fileInput = document.getElementById('fileInput');
         const dropZone = document.querySelector('.file-drop-zone');
         const messageInput = document.getElementById('messageInput');
@@ -19,8 +105,6 @@ class DocBotApp {
         const regenBtn = document.getElementById('regenBtn');
         const themeToggleBtn = document.getElementById('themeToggleBtn');
         const saveChatBtn = document.getElementById('saveChatBtn');
-        const deleteChatBtn = document.getElementById('deleteChatBtn');
-        const historyList = document.getElementById('historyList');
 
         fileInput.addEventListener('change', (e) => this.handleFileUpload(e));
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
@@ -50,8 +134,8 @@ class DocBotApp {
         if (copyLastBtn) copyLastBtn.addEventListener('click', () => this.copyLastAnswer());
         if (regenBtn) regenBtn.addEventListener('click', () => this.regenerateAnswer());
         if (saveChatBtn) saveChatBtn.addEventListener('click', () => this.saveChat());
-        if (deleteChatBtn) deleteChatBtn.addEventListener('click', () => this.deleteSelectedChat());
 
+        // Theme toggle
         const applyTheme = (mode) => {
             document.body.classList.toggle('dark', mode === 'dark');
         };
@@ -65,7 +149,53 @@ class DocBotApp {
             themeToggleBtn.textContent = next === 'dark' ? 'Light mode' : 'Dark mode';
         });
         if (themeToggleBtn) themeToggleBtn.textContent = (saved === 'dark') ? 'Light mode' : 'Dark mode';
-        this.refreshHistoryList();
+
+        // Settings menu
+        const settingsBtn = document.getElementById('settingsBtn');
+        const settingsMenu = document.getElementById('settingsMenu');
+        const toggleThemeBtn = document.getElementById('toggleThemeBtn');
+        const settingsLogoutBtn = document.getElementById('logoutBtn');
+
+        // Hiển thị hoặc ẩn menu Settings
+        if (settingsBtn && settingsMenu) {
+            settingsBtn.addEventListener('click', (event) => {
+                event.stopPropagation(); // Ngăn chặn sự kiện click lan ra ngoài
+                const isMenuVisible = settingsMenu.style.display === 'block';
+                settingsMenu.style.display = isMenuVisible ? 'none' : 'block';
+            });
+
+            // Đóng menu khi click ra ngoài
+            document.addEventListener('click', (event) => {
+                if (!settingsBtn.contains(event.target) && !settingsMenu.contains(event.target)) {
+                    settingsMenu.style.display = 'none';
+                }
+            });
+        }
+
+        // Chuyển đổi chế độ Light/Dark Mode
+        if (toggleThemeBtn && settingsMenu) {
+            toggleThemeBtn.addEventListener('click', () => {
+                const currentTheme = document.body.classList.contains('dark') ? 'dark' : 'light';
+                const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
+                document.body.classList.toggle('dark', nextTheme === 'dark');
+                localStorage.setItem('theme', nextTheme);
+                settingsMenu.style.display = 'none';
+            });
+        }
+
+        // Xử lý đăng xuất từ settings menu
+        if (settingsLogoutBtn) {
+            settingsLogoutBtn.addEventListener('click', () => {
+                window.location.href = '../login/';
+            });
+        }
+
+        // Remove unused settings dropdown code
+    }
+
+    async handleLogout() {
+        await this.authManager.signOut();
+        window.location.href = '../login/';
     }
 
     setupAutoResize() {
@@ -97,9 +227,19 @@ class DocBotApp {
         const allowedExtensions = ['pdf','doc','docx','txt','md','markdown','rtf','odt'];
         const fileExt = (file.name.split('.').pop() || '').toLowerCase();
         if (!allowedMimeTypes.includes(file.type) && !allowedExtensions.includes(fileExt)) {
-            this.updateStatus('error', 'File không được hỗ trợ. Chọn PDF, DOC/DOCX, TXT, MD, RTF, ODT.');
+            this.updateStatus('error', 'File type not supported. Please choose PDF, DOC/DOCX, TXT, MD, RTF, ODT.');
             return;
         }
+        
+        // Store file data for saving
+        this.currentFile = {
+            file: file,
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            lastModified: file.lastModified
+        };
+        
         document.getElementById('fileName').textContent = file.name;
         document.getElementById('fileSize').textContent = `${(file.size / 1024 / 1024).toFixed(2)} MB`;
         document.getElementById('fileInfo').classList.add('show');
@@ -112,7 +252,7 @@ class DocBotApp {
         this.isProcessing = true;
         processingIndicator.classList.add('show');
         statusIndicator.className = 'status-indicator processing';
-        statusIndicator.textContent = 'Đang xử lý...';
+        statusIndicator.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
         setTimeout(() => {
             processingIndicator.classList.remove('show');
             this.fileUploaded = true;
@@ -123,7 +263,7 @@ class DocBotApp {
             sendBtn.disabled = false;
             messageInput.placeholder = 'Type your question about the document...';
             statusIndicator.className = 'status-indicator ready';
-            statusIndicator.textContent = 'Ready';
+            statusIndicator.innerHTML = '<i class="fas fa-check-circle"></i> Ready';
             const welcomeScreen = document.getElementById('welcomeScreen');
             if (welcomeScreen) welcomeScreen.style.display = 'none';
             this.addMessage('Your document is ready. Ask me anything about it.', 'bot');
@@ -150,6 +290,14 @@ class DocBotApp {
         avatar.className = 'message-avatar';
         const avatarImg = document.createElement('div');
         avatarImg.className = sender === 'user' ? 'avatar-user' : 'avatar-bot';
+        
+        // Thêm icon cho bot avatar
+        if (sender === 'bot') {
+            const icon = document.createElement('i');
+            icon.className = 'fas fa-robot';
+            avatarImg.appendChild(icon);
+        }
+        
         avatar.appendChild(avatarImg);
         const content = document.createElement('div');
         content.className = 'message-content';
@@ -190,27 +338,40 @@ class DocBotApp {
         console.log(`${type}: ${message}`);
     }
 
-    resetChat() {
+    async resetChat() {
+        // Lưu chat hiện tại trước khi reset (nếu đã đăng nhập)
+        if (this.authManager.canSaveChat() && this.chatHistory.length > 0) {
+            await this.autoSaveChat();
+        }
+
         this.chatHistory = [];
         this.fileUploaded = false;
         this.isProcessing = false;
+        this.currentFile = null;
+        this.currentChatId = null;
     
         this.clearChatMessages();
     
+        // Đảm bảo welcome screen hiển thị đúng cách
         const welcomeScreen = document.getElementById('welcomeScreen');
-        if (welcomeScreen) welcomeScreen.style.display = 'block';
+        if (welcomeScreen) {
+            welcomeScreen.style.display = 'flex';
+            welcomeScreen.style.flexDirection = 'column';
+            welcomeScreen.style.alignItems = 'center';
+            welcomeScreen.style.justifyContent = 'center';
+        }
     
         const messageInput = document.getElementById('messageInput');
         const sendBtn = document.getElementById('sendBtn');
         messageInput.value = '';
         messageInput.disabled = true;
-        messageInput.placeholder = 'Upload a document first to start chatting...';
+        messageInput.placeholder = 'Upload a document to start chatting...';
         sendBtn.disabled = true;
     
         const statusIndicator = document.getElementById('statusIndicator');
         if (statusIndicator) {
             statusIndicator.className = 'status-indicator waiting';
-            statusIndicator.textContent = 'Waiting for document';
+            statusIndicator.innerHTML = '<i class="fas fa-clock"></i> Waiting for document';
         }
     
         const fileInfo = document.getElementById('fileInfo');
@@ -246,7 +407,13 @@ class DocBotApp {
 
     exportChat() {
         if (this.chatHistory.length === 0) {
-            alert('No chat messages to export');
+            const exportBtn = document.getElementById('exportChatBtn');
+            exportBtn.classList.add('shake');
+            exportBtn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> No chat to export';
+            setTimeout(() => {
+                exportBtn.classList.remove('shake');
+                exportBtn.innerHTML = '<i class="fas fa-download"></i> Export chat';
+            }, 1500);
             return;
         }
         const lines = this.chatHistory.map((m) => {
@@ -283,60 +450,137 @@ class DocBotApp {
         }, 800);
     }
 
-    saveChat() {
-        if (!this.chatHistory.length) return;
-        const id = `chat_${Date.now()}`;
+    async saveChat() {
+        if (!this.authManager || !this.chatStorage || !this.authManager.canSaveChat()) {
+            alert('Please sign in to save chat');
+            return;
+        }
+
+        if (!this.chatHistory.length) {
+            alert('No messages to save');
+            return;
+        }
+
         const title = this.chatHistory.find(m => m.sender === 'user')?.message?.slice(0, 40) || 'Untitled chat';
-        const payload = { id, title, items: this.chatHistory, savedAt: Date.now() };
-        const all = JSON.parse(localStorage.getItem('docbot_history') || '[]');
-        all.unshift(payload);
-        localStorage.setItem('docbot_history', JSON.stringify(all));
-        this.refreshHistoryList();
+        const fileData = this.currentFile ? {
+            name: this.currentFile.name,
+            size: this.currentFile.size,
+            type: this.currentFile.type,
+            lastModified: this.currentFile.lastModified
+        } : null;
+
+        const chatData = {
+            title,
+            messages: this.chatHistory,
+            fileData
+        };
+
+        const result = await this.chatStorage.saveChat(chatData);
+        
+        if (result.success) {
+            this.currentChatId = result.data.id;
+            alert('Chat saved successfully!');
+            await this.loadChatHistory();
+        } else {
+            alert('Error saving chat: ' + result.error);
+        }
     }
 
-    deleteSelectedChat() {
-        const active = document.querySelector('.history-list li.active');
-        if (!active) return;
-        const id = active.dataset.id;
-        let all = JSON.parse(localStorage.getItem('docbot_history') || '[]');
-        all = all.filter(c => c.id !== id);
-        localStorage.setItem('docbot_history', JSON.stringify(all));
-        this.refreshHistoryList();
-        const deleteBtn = document.getElementById('deleteChatBtn');
-        if (deleteBtn) deleteBtn.disabled = true;
+    async autoSaveChat() {
+        if (!this.authManager || !this.chatStorage || !this.authManager.canSaveChat() || !this.chatHistory.length) return;
+
+        const title = this.chatHistory.find(m => m.sender === 'user')?.message?.slice(0, 40) || 'Untitled chat';
+        const fileData = this.currentFile ? {
+            name: this.currentFile.name,
+            size: this.currentFile.size,
+            type: this.currentFile.type,
+            lastModified: this.currentFile.lastModified
+        } : null;
+
+        const chatData = {
+            title,
+            messages: this.chatHistory,
+            fileData
+        };
+
+        const result = await this.chatStorage.saveChat(chatData);
+        if (result.success) {
+            this.currentChatId = result.data.id;
+        }
     }
 
-    refreshHistoryList() {
+    async loadChatHistory() {
+        if (!this.authManager || !this.chatStorage || !this.authManager.canSaveChat()) return;
+
+        const result = await this.chatStorage.getChats();
+        if (result.success) {
+            this.refreshHistoryList(result.data);
+        }
+    }
+
+    refreshHistoryList(chats = []) {
         const list = document.getElementById('historyList');
         if (!list) return;
-        const all = JSON.parse(localStorage.getItem('docbot_history') || '[]');
+        
         list.innerHTML = '';
-        all.forEach((c) => {
+        chats.forEach((chat) => {
             const li = document.createElement('li');
-            li.dataset.id = c.id;
-            li.innerHTML = `<span>${c.title}</span><span class="meta">${new Date(c.savedAt).toLocaleString()}</span>`;
+            li.dataset.id = chat.id;
+            li.innerHTML = `
+                <div class="chat-item">
+                    <span class="chat-title">${chat.title}</span>
+                    <span class="chat-meta">${new Date(chat.created_at).toLocaleString()}</span>
+                    <div class="chat-actions">
+                        <button class="btn-rename" onclick="event.stopPropagation(); app.renameChat('${chat.id}', '${chat.title}')">Rename</button>
+                        <button class="btn-delete" onclick="event.stopPropagation(); app.deleteChat('${chat.id}')">Delete</button>
+                    </div>
+                </div>
+            `;
             li.addEventListener('click', () => {
                 list.querySelectorAll('li').forEach(x => x.classList.remove('active'));
                 li.classList.add('active');
-                const deleteBtn = document.getElementById('deleteChatBtn');
-                if (deleteBtn) deleteBtn.disabled = false;
-                this.loadChat(c);
+                this.loadChat(chat);
             });
             list.appendChild(li);
         });
     }
 
-    loadChat(chat) {
+    async loadChat(chat) {
         this.clearChatMessages();
         const chatMessages = document.getElementById('chatMessages');
         this.chatHistory = [];
-        chat.items.forEach((m) => {
+        this.currentChatId = chat.id;
+        
+        // Load file info if exists
+        if (chat.file_data) {
+            this.currentFile = {
+                file: null, // File object not available when loading from database
+                name: chat.file_data.name,
+                size: chat.file_data.size,
+                type: chat.file_data.type,
+                lastModified: chat.file_data.lastModified
+            };
+            document.getElementById('fileName').textContent = chat.file_data.name;
+            document.getElementById('fileSize').textContent = `${(chat.file_data.size / 1024 / 1024).toFixed(2)} MB`;
+            document.getElementById('fileInfo').classList.add('show');
+            this.fileUploaded = true;
+        }
+
+        chat.messages.forEach((m) => {
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${m.sender}`;
             const avatar = document.createElement('div');
             avatar.className = 'message-avatar';
             const avatarImg = document.createElement('div');
             avatarImg.className = m.sender === 'user' ? 'avatar-user' : 'avatar-bot';
+            
+            // Thêm icon cho bot avatar
+            if (m.sender === 'bot') {
+                const icon = document.createElement('i');
+                icon.className = 'fas fa-robot';
+                avatarImg.appendChild(icon);
+            }
+            
             avatar.appendChild(avatarImg);
             const content = document.createElement('div');
             content.className = 'message-content';
@@ -351,10 +595,47 @@ class DocBotApp {
             this.chatHistory.push(m);
         });
         chatMessages.scrollTop = chatMessages.scrollHeight;
+        
         const copyLastBtn = document.getElementById('copyLastBtn');
-        if (copyLastBtn) copyLastBtn.disabled = !chat.items.some(x => x.sender === 'bot');
+        if (copyLastBtn) copyLastBtn.disabled = !chat.messages.some(x => x.sender === 'bot');
         const regenBtn = document.getElementById('regenBtn');
-        if (regenBtn) regenBtn.disabled = !chat.items.some(x => x.sender === 'user');
+        if (regenBtn) regenBtn.disabled = !chat.messages.some(x => x.sender === 'user');
+    }
+
+    async renameChat(chatId, currentTitle) {
+        if (!this.chatStorage) {
+            alert('Please sign in to rename chat');
+            return;
+        }
+
+        const newTitle = prompt('Enter new name for chat:', currentTitle);
+        if (newTitle && newTitle !== currentTitle) {
+            const result = await this.chatStorage.updateChatTitle(chatId, newTitle);
+            if (result.success) {
+                await this.loadChatHistory();
+            } else {
+                alert('Error renaming chat: ' + result.error);
+            }
+        }
+    }
+
+    async deleteChat(chatId) {
+        if (!this.chatStorage) {
+            alert('Please sign in to delete chat');
+            return;
+        }
+
+        if (confirm('Are you sure you want to delete this chat?')) {
+            const result = await this.chatStorage.deleteChat(chatId);
+            if (result.success) {
+                await this.loadChatHistory();
+                if (this.currentChatId === chatId) {
+                    this.resetChat();
+                }
+            } else {
+                alert('Error deleting chat: ' + result.error);
+            }
+        }
     }
 }
 
@@ -364,6 +645,9 @@ function askQuestion(question) {
     messageInput.focus();
 }
 
+// Global app instance
+let app;
+
 document.addEventListener('DOMContentLoaded', () => {
-    new DocBotApp();
+    app = new DocBotApp();
 });
