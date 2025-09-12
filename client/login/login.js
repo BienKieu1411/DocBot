@@ -20,9 +20,6 @@ class LoginManager {
         const isLoggedIn = await this.authManager.init();
         if (isLoggedIn) {
             this.redirectToApp();
-        } else {
-            // Nếu đã vào login mà có session guest thì xóa guest
-            sessionStorage.removeItem('guestMode');
         }
     }
 
@@ -54,9 +51,100 @@ class LoginManager {
             this.handleRegister();
         });
 
-        document.getElementById('guestLogin').addEventListener('click', () => {
-            this.handleGuestLogin();
+        // Forgot password unified flow
+        document.getElementById('forgotPassword').addEventListener('click', (e) => {
+            e.preventDefault();
+            this.showResetConfirmModal();
         });
+
+        const resetConfirmForm = document.getElementById('resetConfirmForm');
+        if (resetConfirmForm) {
+            resetConfirmForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.handleConfirmPasswordReset();
+            });
+        }
+
+        const resetSendLinkBtn = document.getElementById('resetSendLinkBtn');
+        if (resetSendLinkBtn) {
+            resetSendLinkBtn.addEventListener('click', () => this.handlePasswordResetSendFromConfirm());
+        }
+
+        // Toggle show/hide password buttons (login)
+        const toggleLoginPw = document.getElementById('toggleLoginPw');
+        if (toggleLoginPw) {
+            toggleLoginPw.addEventListener('click', () => {
+                const input = document.getElementById('loginPassword');
+                if (!input) return;
+                const icon = toggleLoginPw.querySelector('i');
+                const isPwd = input.type === 'password';
+                input.type = isPwd ? 'text' : 'password';
+                icon.className = isPwd ? 'fas fa-eye-slash' : 'fas fa-eye';
+            });
+        }
+
+        // Toggle show/hide password buttons (register)
+        const toggleRegisterPw = document.getElementById('toggleRegisterPw');
+        const toggleRegisterPw2 = document.getElementById('toggleRegisterPw2');
+        if (toggleRegisterPw) {
+            toggleRegisterPw.addEventListener('click', () => {
+                const input = document.getElementById('registerPassword');
+                if (!input) return;
+                const icon = toggleRegisterPw.querySelector('i');
+                const isPwd = input.type === 'password';
+                input.type = isPwd ? 'text' : 'password';
+                icon.className = isPwd ? 'fas fa-eye-slash' : 'fas fa-eye';
+            });
+        }
+        if (toggleRegisterPw2) {
+            toggleRegisterPw2.addEventListener('click', () => {
+                const input = document.getElementById('registerConfirmPassword');
+                if (!input) return;
+                const icon = toggleRegisterPw2.querySelector('i');
+                const isPwd = input.type === 'password';
+                input.type = isPwd ? 'text' : 'password';
+                icon.className = isPwd ? 'fas fa-eye-slash' : 'fas fa-eye';
+            });
+        }
+        // Reset password modal toggles
+        const toggleResetPw = document.getElementById('toggleResetPw');
+        if (toggleResetPw) {
+            toggleResetPw.addEventListener('click', () => {
+                const input = document.getElementById('resetNewPassword');
+                if (!input) return;
+                const icon = toggleResetPw.querySelector('i');
+                const isPwd = input.type === 'password';
+                input.type = isPwd ? 'text' : 'password';
+                icon.className = isPwd ? 'fas fa-eye-slash' : 'fas fa-eye';
+            });
+        }
+        const toggleResetPw2 = document.getElementById('toggleResetPw2');
+        if (toggleResetPw2) {
+            toggleResetPw2.addEventListener('click', () => {
+                const input = document.getElementById('resetConfirmPassword');
+                if (!input) return;
+                const icon = toggleResetPw2.querySelector('i');
+                const isPwd = input.type === 'password';
+                input.type = isPwd ? 'text' : 'password';
+                icon.className = isPwd ? 'fas fa-eye-slash' : 'fas fa-eye';
+            });
+        }
+
+        const resetConfirmModal = document.getElementById('resetConfirmModal');
+        if (resetConfirmModal) {
+            resetConfirmModal.addEventListener('click', (e) => {
+                if (e.target.id === 'resetConfirmModal') {
+                    this.hideResetConfirmModal();
+                }
+            });
+        }
+
+        const closeResetConfirmModal = document.getElementById('closeResetConfirmModal');
+        if (closeResetConfirmModal) {
+            closeResetConfirmModal.addEventListener('click', () => {
+                this.hideResetConfirmModal();
+            });
+        }
     }
 
     createThemeToggle() {
@@ -85,66 +173,215 @@ class LoginManager {
 
     async handleLogin() {
         if (!this.authManager) {
-            alert('Please wait, system is initializing...');
+            this.showMessage('Please wait, system is initializing...', 'error');
             return;
         }
 
         const email = document.getElementById('loginEmail').value;
         const password = document.getElementById('loginPassword').value;
+        const loginBtn = document.getElementById('loginBtn');
 
-        const result = await this.authManager.signIn(email, password);
-        
-        if (result.success) {
-            this.redirectToApp();
-        } else {
-            alert('Login error: ' + result.error);
+        // Show loading state
+        loginBtn.disabled = true;
+        loginBtn.classList.add('loading');
+        loginBtn.textContent = 'Signing in...';
+
+        try {
+            const result = await this.authManager.signIn(email, password);
+            
+            if (result.success) {
+                this.showMessage('Login successful! Redirecting...', 'success');
+                setTimeout(() => {
+                    this.redirectToApp();
+                }, 1000);
+            } else {
+                this.showMessage('Login error: ' + result.error, 'error');
+            }
+        } catch (error) {
+            this.showMessage('An unexpected error occurred. Please try again.', 'error');
+        } finally {
+            // Reset button state
+            loginBtn.disabled = false;
+            loginBtn.classList.remove('loading');
+            loginBtn.textContent = 'Sign In';
         }
     }
 
     async handleRegister() {
         if (!this.authManager) {
-            alert('Please wait, system is initializing...');
+            this.showMessage('Please wait, system is initializing...', 'error');
             return;
         }
 
         const email = document.getElementById('registerEmail').value;
         const password = document.getElementById('registerPassword').value;
         const confirmPassword = document.getElementById('registerConfirmPassword').value;
+        const registerBtn = document.getElementById('registerBtn');
 
         if (password !== confirmPassword) {
-            alert('Password confirmation does not match');
+            this.showMessage('Password confirmation does not match', 'error');
             return;
         }
 
-        const result = await this.authManager.signUp(email, password);
-        
-        if (result.success) {
-            alert('Registration successful! Please check your email to confirm your account.');
-            document.getElementById('registerForm').style.display = 'none';
-            document.getElementById('loginForm').style.display = 'block';
-            this.clearForms();
-        } else {
-            alert('Registration error: ' + result.error);
+        if (password.length < 6) {
+            this.showMessage('Password must be at least 6 characters long', 'error');
+            return;
+        }
+
+        // Show loading state
+        registerBtn.disabled = true;
+        registerBtn.classList.add('loading');
+        registerBtn.textContent = 'Creating account...';
+
+        try {
+            console.log('Starting registration for:', email);
+            const result = await this.authManager.signUp(email, password);
+            console.log('Registration result:', result);
+            
+            if (result.success) {
+                this.showMessage('Registration successful! Please check your email to confirm your account.', 'success');
+                // Redirect to verification page with email parameter
+                setTimeout(() => {
+                    window.location.href = `../verify-email.html?email=${encodeURIComponent(email)}`;
+                }, 2000);
+            } else {
+                this.showMessage('Registration error: ' + result.error, 'error');
+            }
+        } catch (error) {
+            console.error('Registration error:', error);
+            this.showMessage('Registration error: ' + error.message, 'error');
+        } finally {
+            // Reset button state
+            registerBtn.disabled = false;
+            registerBtn.classList.remove('loading');
+            registerBtn.textContent = 'Sign Up';
         }
     }
 
-    handleGuestLogin() {
-        // Set guest mode flag
-        sessionStorage.setItem('guestMode', 'true');
-        
-        if (!this.authManager) {
-            // For guest mode, we can still proceed without authManager
-            // Just redirect directly
-            this.redirectToApp();
-            return;
-        }
-        
-        this.authManager.setGuestMode();
-        this.redirectToApp();
-    }
 
     redirectToApp() {
-    window.location.href = '../app/';
+    window.location.href = '../app/index.html';
+    }
+
+    async handlePasswordResetSendFromConfirm() {
+        const email = document.getElementById('resetConfirmEmail').value.trim();
+        const btn = document.getElementById('resetSendLinkBtn');
+        if (!email) {
+            this.showMessage('Please enter your email address', 'error');
+            return;
+        }
+        btn.disabled = true;
+        btn.classList.add('loading');
+        try {
+            const result = await this.authManager.requestPasswordReset(email);
+            if (result.success) {
+                this.showMessage('Reset code sent! Check your email.', 'success');
+                const otp = document.getElementById('resetOtp');
+                if (otp) otp.focus();
+            } else {
+                this.showMessage('Error: ' + result.error, 'error');
+            }
+        } catch (error) {
+            this.showMessage('An unexpected error occurred. Please try again.', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.classList.remove('loading');
+        }
+    }
+
+    async handleConfirmPasswordReset() {
+        if (!this.authManager) {
+            this.showMessage('Please wait, system is initializing...', 'error');
+            return;
+        }
+
+        const email = document.getElementById('resetConfirmEmail').value.trim();
+        const otp = document.getElementById('resetOtp').value.trim();
+        const newPw = document.getElementById('resetNewPassword').value;
+        const confirmPw = document.getElementById('resetConfirmPassword').value;
+        const btn = document.getElementById('resetConfirmBtn');
+
+        if (!email || !otp || !newPw || !confirmPw) {
+            this.showMessage('Please fill in all fields', 'error');
+            return;
+        }
+        if (newPw !== confirmPw) {
+            this.showMessage('Password confirmation does not match', 'error');
+            return;
+        }
+        if (newPw.length < 6) {
+            this.showMessage('Password must be at least 6 characters long', 'error');
+            return;
+        }
+
+        btn.disabled = true;
+        btn.classList.add('loading');
+        btn.textContent = 'Updating...';
+
+        try {
+            const result = await this.authManager.confirmPasswordReset(email, otp, newPw);
+            if (result.success) {
+                this.showMessage('Password updated successfully! Please sign in.', 'success');
+                this.hideResetConfirmModal();
+                document.getElementById('loginEmail').value = email;
+                document.getElementById('loginPassword').focus();
+            } else {
+                this.showMessage('Error: ' + result.error, 'error');
+            }
+        } catch (error) {
+            this.showMessage('An unexpected error occurred. Please try again.', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.classList.remove('loading');
+            btn.textContent = 'Update Password';
+        }
+    }
+
+    showResetConfirmModal() {
+        document.getElementById('resetConfirmModal').style.display = 'flex';
+        const email = document.getElementById('loginEmail')?.value || '';
+        const emailInput = document.getElementById('resetConfirmEmail');
+        if (emailInput && email) emailInput.value = email;
+    }
+
+    hideResetConfirmModal() {
+        document.getElementById('resetConfirmModal').style.display = 'none';
+        document.getElementById('resetConfirmEmail').value = '';
+        document.getElementById('resetOtp').value = '';
+        document.getElementById('resetNewPassword').value = '';
+        document.getElementById('resetConfirmPassword').value = '';
+        this.clearMessages();
+    }
+
+    showMessage(text, type = 'info') {
+        this.clearMessages();
+        
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${type}`;
+        messageDiv.innerHTML = `
+            <div class="message-content">
+                <i class="fas fa-${type === 'error' ? 'exclamation-triangle' : type === 'success' ? 'check-circle' : 'info-circle'}"></i>
+                <span class="message-text">${text}</span>
+            </div>
+        `;
+        
+        // Insert message at the top of the login container
+        const loginContainer = document.querySelector('.login-container');
+        loginContainer.insertBefore(messageDiv, loginContainer.firstChild);
+        
+        // Auto-hide success messages after 5 seconds
+        if (type === 'success') {
+            setTimeout(() => {
+                if (messageDiv.parentNode) {
+                    messageDiv.remove();
+                }
+            }, 5000);
+        }
+    }
+
+    clearMessages() {
+        const messages = document.querySelectorAll('.message');
+        messages.forEach(message => message.remove());
     }
 
     clearForms() {
@@ -153,6 +390,7 @@ class LoginManager {
         document.getElementById('registerEmail').value = '';
         document.getElementById('registerPassword').value = '';
         document.getElementById('registerConfirmPassword').value = '';
+        this.clearMessages();
     }
 }
 

@@ -7,7 +7,7 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="app.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css" integrity="sha384-KyZXEAg3QhqLMpG8r+Knujsl5+5hb7ie2e5c5i5c5i5c5i5c5i5c5i5c5i5c5i5" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css">
     <link rel="icon" type="image/png" href="../favicon_icon.png">
 </head>
 <body>
@@ -24,10 +24,10 @@
             </div>
             <div class="header-actions">
                 <div class="header-action-buttons">
-                    <button class="btn btn-small" id="newChatBtn">
+                    <button class="btn btn-small" id="newChatBtn" onclick="window.app && app.resetChat(); return false;">
                         <i class="fas fa-plus"></i> New chat
                     </button>
-                    <button class="btn btn-small" id="exportChatBtn">
+                    <button class="btn btn-small" id="exportChatBtn" onclick="window.app && app.exportChat(); return false;">
                         <i class="fas fa-download"></i> Export chat
                     </button>
                 </div>
@@ -36,10 +36,17 @@
                 </div>
                 
                 <div class="settings-container">
-                    <button class="btn-settings" id="settingsBtn">
+                    <button class="btn-settings" id="settingsBtn" onclick="window.__toggleSettingsMenu && __toggleSettingsMenu(); return false;">
                         <i class="fas fa-cog"></i>
                     </button>
                     <div class="settings-menu" id="settingsMenu" style="display: none;">
+                        <div class="settings-account" id="settingsAccount" style="padding:16px 20px; display:flex; align-items:center; gap:16px; border-bottom:1px solid #e2e8f0; cursor:default;">
+                            <img id="accountAvatar" src="" alt="avatar" style="width:40px; height:40px; border-radius:50%; object-fit:cover; background:#f3f4f6;">
+                            <div style="flex:1;">
+                                <div id="accountEmail" style="font-weight:600; color:#334155; font-size:1rem;">user@gmail.com</div>
+                                <div id="accountStatus" style="font-size:0.95rem; color:#16a34a; margin-top:2px;">Active</div>
+                            </div>
+                        </div>
                         <button class="settings-item" id="toggleThemeBtn">
                             <i class="fas fa-adjust"></i> Toggle Light/Dark Mode
                         </button>
@@ -49,10 +56,7 @@
                     </div>
                 </div>
 
-                <div class="user-info" id="userInfo" style="display: none;">
-                    <span id="userEmail"></span>
-                    <button class="btn btn-secondary" id="userLogoutBtn">Logout</button>
-                </div>
+                
             </div>
         </header>
 
@@ -68,7 +72,7 @@
                             <i class="fas fa-comments"></i>
                         </div>
                         <h3 class="welcome-title">Ready to chat!</h3>
-                        <p class="welcome-text">Upload a document (PDF, Word, TXT, Markdown) and start asking questions</p>
+                        <p class="welcome-text">Upload documents (PDF, Word, TXT, Markdown) and start asking questions</p>
                     </div>
                 </div>
 
@@ -105,7 +109,6 @@
                 <div class="panel">
                     <h3>Chat History</h3>
                     <div class="history-actions">
-                        <button class="btn btn-secondary" id="saveChatBtn">Save chat</button>
                         <div class="history-info" id="historyInfo">
                             <small class="warn-msg">Sign in to save chats</small>
                         </div>
@@ -116,11 +119,11 @@
                     <h3>Document</h3>
                     <div class="file-drop-zone" onclick="document.getElementById('fileInput').click()">
                         <div class="drop-icon"></div>
-                        <div class="drop-text">Drag & drop your document</div>
-                        <div class="drop-subtext">or click to select (PDF, DOCX, DOC, TXT, MD)</div>
+                        <div class="drop-text">Drag & drop your documents</div>
+                        <div class="drop-subtext">or click to select multiple files (PDF, DOCX, DOC, TXT, MD)</div>
                     </div>
                     
-                    <input type="file" id="fileInput" class="file-input" accept=".pdf,.doc,.docx,.txt,.md,.markdown,.rtf,.odt">
+                    <input type="file" id="fileInput" class="file-input" accept=".pdf,.doc,.docx,.txt,.md,.markdown,.rtf,.odt" multiple>
                     
                     <div class="file-info" id="fileInfo">
                         <div class="file-name" id="fileName"></div>
@@ -149,9 +152,8 @@
         </main>
     </div>
 
-    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
-    <script src="../shared/supabase-config.js"></script>
+    <script src="../shared/api-client.js"></script>
     <script src="app.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/js/bootstrap.bundle.min.js" integrity="sha384-ENjdO4Dr2bkBIFxQpeo5i5c5i5c5i5c5i5c5i5c5i5c5i5c5i5c5i5c5i5c5i5" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

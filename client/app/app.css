@@ -1,3 +1,30 @@
+/* Settings Account Section */
+.settings-account {
+    background: none;
+    border: none;
+    cursor: default;
+    user-select: text;
+    pointer-events: none;
+}
+.settings-account * {
+    pointer-events: none !important;
+}
+.settings-account #accountStatus {
+    color: #16a34a;
+    font-weight: 500;
+}
+.settings-account #accountEmail {
+    color: #334155;
+    font-weight: 600;
+}
+.settings-account img {
+    background: #f3f4f6;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    object-fit: cover;
+    border: 1px solid #e2e8f0;
+}
 .shake {
     animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both;
 }
@@ -18,10 +45,11 @@ body {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
     background-attachment: fixed;
     min-height: 100vh;
-    padding: 20px;
+    height: 100vh;
+    padding: 0;
     position: relative;
-    overflow-x: visible;
-    overflow-y: visible;
+    overflow-x: hidden;
+    overflow-y: hidden;
 }
 
 .dark body, body.dark {
@@ -38,6 +66,7 @@ body::before {
     background: rgba(255,255,255,0.1);
     pointer-events: none;
     z-index: -1;
+}
 .btn-secondary.active-save-btn {
     background: linear-gradient(90deg, #38c6ff 0%, #4f8cff 100%);
     color: #fff;
@@ -61,16 +90,16 @@ body::before {
     color: #ff6f61;
     font-weight: 500;
 }
-}
 
 .app-container {
     max-width: 1400px;
     margin: 0 auto;
-    min-height: calc(100vh - 40px);
+    height: 100vh;
     display: flex;
     flex-direction: column;
     gap: 20px;
-    overflow: visible;
+    padding: 20px;
+    overflow: hidden;
 }
 
 .app-header {
@@ -87,7 +116,21 @@ body::before {
     justify-content: space-between;
     position: relative;
     overflow: visible;
-    z-index: 999999;
+    z-index: 2147483647;
+    pointer-events: auto;
+}
+
+/* Ensure header actions are always clickable and above any overlays */
+.header-actions, .btn-settings, .header-action-buttons .btn-small {
+    pointer-events: auto !important;
+    position: relative;
+    z-index: 2147483647;
+}
+
+/* Prevent main content from overlaying header */
+.main-content {
+    position: relative;
+    z-index: 1;
 }
 
 body.dark .app-header { background: rgba(15, 23, 42, 0.7); border-color: rgba(148, 163, 184, 0.2); }
@@ -186,12 +229,39 @@ body.dark .spinner { border-color: rgba(99,102,241,.2); border-top-color: #6366f
     align-items: center;
     position: relative;
     z-index: 999999;
+    pointer-events: auto;
 }
 
 .header-action-buttons {
     display: flex;
     gap: 8px;
     align-items: center;
+}
+/* Restyle New chat and Export chat buttons */
+.header-action-buttons .btn-small {
+    background: #ffffff;
+    color: #334155;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+}
+.header-action-buttons .btn-small i { color: #64748b; }
+.header-action-buttons .btn-small:hover {
+    transform: translateY(-2px);
+    background: #f8fafc;
+    border-color: #dbe3ef;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+}
+body.dark .header-action-buttons .btn-small {
+    background: #0b1220;
+    color: #e2e8f0;
+    border: 1px solid #1f2a44;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+body.dark .header-action-buttons .btn-small i { color: #94a3b8; }
+body.dark .header-action-buttons .btn-small:hover {
+    background: #0f172a;
+    border-color: #334155;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
 }
 
 .btn, .upload-btn {
@@ -299,8 +369,8 @@ body.dark .spinner { border-color: rgba(99,102,241,.2); border-top-color: #6366f
     grid-template-columns: 1fr 350px;
     gap: 20px;
     min-height: 0;
-    height: calc(100vh - 120px);
-    overflow: visible;
+    height: calc(100vh - 120px); /* fixed height area */
+    overflow: hidden;
 }
 
 .sidebar {
@@ -344,7 +414,7 @@ body.dark .spinner { border-color: rgba(99,102,241,.2); border-top-color: #6366f
 
 .chat-messages {
     flex: 1;
-    overflow-y: auto;
+    overflow-y: auto; /* scrollbar inside chat */
     padding: 25px;
     display: flex;
     flex-direction: column;
@@ -715,6 +785,27 @@ body.dark .message-avatar .avatar-bot i {
     display: block;
 }
 
+/* List uploaded files individually */
+.file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.file-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.file-item-name { color: #1e293b; font-weight: 500; }
+.file-item-size { color: #64748b; font-size: 12px; margin-left: 8px; }
+
 .file-name {
     font-weight: 600;
     color: #1e293b;
@@ -951,6 +1042,7 @@ body.dark .message-avatar .avatar-bot i {
     position: relative;
     display: inline-block;
     z-index: 999999;
+    pointer-events: auto;
 }
 
 .btn-settings {
@@ -960,6 +1052,7 @@ body.dark .message-avatar .avatar-bot i {
     color: #64748b;
     cursor: pointer;
     transition: color 0.2s;
+    pointer-events: auto;
 }
 
 .btn-settings:hover {
@@ -983,6 +1076,9 @@ body.dark .message-avatar .avatar-bot i {
     margin-top: 4px;
     pointer-events: auto;
 }
+
+/* Reliable open state */
+.settings-menu.show { display: block !important; }
 
 .settings-menu {
     isolation: isolate;

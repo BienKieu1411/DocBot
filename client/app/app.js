@@ -1,9 +1,15 @@
+// Simple MD5 implementation for Gravatar (if not present)
+function md5(str) {
+    // Use a CDN if you want a full implementation, here is a minimal fallback
+    // For production, use a proper library
+    return CryptoJS ? CryptoJS.MD5(str).toString() : '';
+}
 class DocBotApp {
     constructor() {
-        this.fileUploaded = false;
+        this.filesUploaded = false;
         this.isProcessing = false;
         this.chatHistory = [];
-        this.currentFile = null;
+        this.uploadedFiles = [];
         this.authManager = null;
         this.chatStorage = null;
         this.currentChatId = null;
@@ -26,17 +32,24 @@ class DocBotApp {
         if (this.authManager) {
             const isLoggedIn = await this.authManager.init();
             if (!isLoggedIn) {
-                // Nếu chưa đăng nhập thì set chế độ guest
-                this.authManager.isGuest = true;
+                // Guest mode: do not redirect; continue with limited features
+                this.currentUser = null;
             }
+            
+            // Set up auth state change listener
+            this.authManager.handleAuthStateChange((event, session) => {
+                if (event === 'SIGNED_OUT') {
+                    this.currentUser = null;
+                    this.updateUserInterface();
+                } else if (event === 'SIGNED_IN') {
+                    // Always use authManager.currentUser for info
+                    this.currentUser = this.authManager.currentUser;
+                    this.updateUserInterface();
+                }
+            });
         } else {
-            // Nếu không có authManager, assume guest mode
-            this.authManager = {
-                isLoggedIn: () => false,
-                isGuest: true,
-                canSaveChat: () => false,
-                currentUser: null
-            };
+            // If no auth manager, continue in guest mode
+            this.currentUser = null;
         }
         
         // Set up chat storage
@@ -47,11 +60,6 @@ class DocBotApp {
                 updateChatTitle: () => ({ success: false, error: 'Please sign in to update chat' }),
                 deleteChat: () => ({ success: false, error: 'Please sign in to delete chat' })
             };
-        }
-        
-        // If Supabase is not configured, show demo mode message
-        if (typeof isSupabaseConfigured !== 'undefined' && !isSupabaseConfigured) {
-            // Running in demo mode - Supabase not configured
         }
         
         this.updateUserInterface();
@@ -65,33 +73,42 @@ class DocBotApp {
         const userEmail = document.getElementById('userEmail');
         const saveChatBtn = document.getElementById('saveChatBtn');
         const historyInfo = document.getElementById('historyInfo');
+        const accountEmail = document.getElementById('accountEmail');
+        const accountAvatar = document.getElementById('accountAvatar');
+        const accountStatus = document.getElementById('accountStatus');
 
-        if (this.authManager.isLoggedIn() && !this.authManager.isGuest) {
-            userInfo.style.display = 'flex';
-            userEmail.textContent = this.authManager.currentUser.email;
-            if (saveChatBtn) {
-                saveChatBtn.style.display = 'inline-block';
-                saveChatBtn.disabled = false;
-                saveChatBtn.classList.add('active-save-btn');
-            }
+        if (!historyInfo) return;
+
+        if (this.authManager.isLoggedIn() && this.authManager.currentUser) {
+            const user = this.authManager.currentUser;
+            if (userInfo) userInfo.style.display = 'flex';
+            if (userEmail) userEmail.textContent = user.email || '';
             historyInfo.innerHTML = '<small class="success-msg">Chats will be saved automatically</small>';
-        } else {
-            userInfo.style.display = 'none';
-            if (saveChatBtn) {
-                saveChatBtn.style.display = 'none';
+            if (accountEmail) accountEmail.textContent = user.email || '';
+            if (accountStatus) accountStatus.textContent = 'Active';
+            if (accountAvatar) {
+                let avatarUrl = '';
+                if (user.avatar_url) {
+                    avatarUrl = user.avatar_url;
+                } else if (user.email) {
+                    avatarUrl = `https://www.gravatar.com/avatar/${md5(user.email.trim().toLowerCase())}?d=identicon`;
+                } else {
+                    avatarUrl = '';
+                }
+                accountAvatar.src = avatarUrl;
             }
+        } else {
+            if (userInfo) userInfo.style.display = 'none';
             historyInfo.innerHTML = '<small class="warn-msg">Sign in to save chats</small>';
+            if (accountEmail) accountEmail.textContent = '';
+            if (accountStatus) accountStatus.textContent = '';
+            if (accountAvatar) accountAvatar.src = '';
         }
     }
 
     initializeEventListeners() {
         // User info logout button
-        const userLogoutBtn = document.getElementById('userLogoutBtn');
-        if (userLogoutBtn) {
-            userLogoutBtn.addEventListener('click', () => {
-                this.handleLogout();
-            });
-        }
+        // removed external user logout button (handled in settings menu)
 
         // Main app events
         const fileInput = document.getElementById('fileInput');
@@ -133,9 +150,7 @@ class DocBotApp {
         if (exportChatBtn) exportChatBtn.addEventListener('click', () => this.exportChat());
         if (copyLastBtn) copyLastBtn.addEventListener('click', () => this.copyLastAnswer());
         if (regenBtn) regenBtn.addEventListener('click', () => this.regenerateAnswer());
-        if (saveChatBtn) saveChatBtn.addEventListener('click', () => this.saveChat());
 
-        // Theme toggle
         const applyTheme = (mode) => {
             document.body.classList.toggle('dark', mode === 'dark');
         };
@@ -156,38 +171,115 @@ class DocBotApp {
         const toggleThemeBtn = document.getElementById('toggleThemeBtn');
         const settingsLogoutBtn = document.getElementById('logoutBtn');
 
+        // Global fallback toggler for inline onclick
+        window.__toggleSettingsMenu = () => {
+            if (!settingsMenu) return;
+            const isShown = settingsMenu.classList.contains('show');
+            settingsMenu.classList.toggle('show', !isShown);
+        };
+
+        // Delegated fallback to guarantee click works even if listeners are lost
+        document.addEventListener('click', (evt) => {
+            const target = evt.target;
+            // Settings button or icon inside it
+            if (target.id === 'settingsBtn' || (target.closest && target.closest('#settingsBtn'))) {
+                console.log('Delegated: settingsBtn');
+                if (evt.stopImmediatePropagation) evt.stopImmediatePropagation();
+                evt.stopPropagation();
+                evt.preventDefault();
+                if (settingsMenu) {
+                    const isShown = settingsMenu.classList.contains('show');
+                    settingsMenu.classList.toggle('show', !isShown);
+                }
+                return;
+            }
+            // New chat
+            if (target.id === 'newChatBtn' || (target.closest && target.closest('#newChatBtn'))) {
+                console.log('Delegated: newChatBtn');
+                evt.preventDefault();
+                this.resetChat();
+                return;
+            }
+            // Export chat
+            if (target.id === 'exportChatBtn' || (target.closest && target.closest('#exportChatBtn'))) {
+                console.log('Delegated: exportChatBtn');
+                evt.preventDefault();
+                this.exportChat();
+                return;
+            }
+            // Click outside settings menu closes it
+            if (settingsMenu && settingsBtn && settingsMenu.classList.contains('show')) {
+                if (!settingsBtn.contains(target) && !settingsMenu.contains(target)) {
+                    settingsMenu.classList.remove('show');
+                }
+            }
+        }, true);
+
         // Hiển thị hoặc ẩn menu Settings
         if (settingsBtn && settingsMenu) {
-            settingsBtn.addEventListener('click', (event) => {
-                event.stopPropagation(); // Ngăn chặn sự kiện click lan ra ngoài
-                const isMenuVisible = settingsMenu.style.display === 'block';
-                settingsMenu.style.display = isMenuVisible ? 'none' : 'block';
+            const openCloseMenu = () => {
+                const isShown = settingsMenu.classList.contains('show');
+                settingsMenu.classList.toggle('show', !isShown);
+            };
+
+            // Toggle mở/đóng và chặn lan truyền để không bị đóng ngay lập tức
+            const onSettingsBtnClick = (event) => {
+                event.preventDefault();
+                if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+                event.stopPropagation();
+                openCloseMenu();
+            };
+            settingsBtn.addEventListener('click', (e) => { console.log('settingsBtn click'); onSettingsBtnClick(e); });
+            settingsBtn.addEventListener('touchstart', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                openCloseMenu();
+            }, { passive: false });
+
+            // Ngăn click bên trong menu làm đóng menu
+            settingsMenu.addEventListener('click', (event) => {
+                if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+                event.stopPropagation();
             });
 
             // Đóng menu khi click ra ngoài
             document.addEventListener('click', (event) => {
                 if (!settingsBtn.contains(event.target) && !settingsMenu.contains(event.target)) {
-                    settingsMenu.style.display = 'none';
+                    settingsMenu.classList.remove('show');
                 }
             });
         }
 
         // Chuyển đổi chế độ Light/Dark Mode
         if (toggleThemeBtn && settingsMenu) {
-            toggleThemeBtn.addEventListener('click', () => {
+            const toggleThemeHandler = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
                 const currentTheme = document.body.classList.contains('dark') ? 'dark' : 'light';
                 const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
                 document.body.classList.toggle('dark', nextTheme === 'dark');
                 localStorage.setItem('theme', nextTheme);
                 settingsMenu.style.display = 'none';
-            });
+            };
+            toggleThemeBtn.addEventListener('click', toggleThemeHandler);
+            toggleThemeBtn.addEventListener('touchstart', toggleThemeHandler, { passive: false });
         }
 
         // Xử lý đăng xuất từ settings menu
         if (settingsLogoutBtn) {
-            settingsLogoutBtn.addEventListener('click', () => {
-                window.location.href = '../login/';
-            });
+            const logoutHandler = async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                try {
+                    if (this.authManager) {
+                        await this.authManager.signOut();
+                    }
+                } finally {
+                    window.location.href = '../login/index.html';
+                }
+            };
+            settingsLogoutBtn.addEventListener('click', logoutHandler);
+            settingsLogoutBtn.addEventListener('touchstart', logoutHandler, { passive: false });
         }
 
         // Remove unused settings dropdown code
@@ -195,7 +287,7 @@ class DocBotApp {
 
     async handleLogout() {
         await this.authManager.signOut();
-        window.location.href = '../login/';
+        window.location.href = '../login/index.html';
     }
 
     setupAutoResize() {
@@ -213,8 +305,8 @@ class DocBotApp {
     }
 
     processFiles(fileList) {
-        const file = fileList[0];
-        if (!file) return;
+        if (!fileList || fileList.length === 0) return;
+        
         const allowedMimeTypes = [
             'application/pdf',
             'application/msword',
@@ -225,61 +317,129 @@ class DocBotApp {
             'application/vnd.oasis.opendocument.text'
         ];
         const allowedExtensions = ['pdf','doc','docx','txt','md','markdown','rtf','odt'];
-        const fileExt = (file.name.split('.').pop() || '').toLowerCase();
-        if (!allowedMimeTypes.includes(file.type) && !allowedExtensions.includes(fileExt)) {
-            this.updateStatus('error', 'File type not supported. Please choose PDF, DOC/DOCX, TXT, MD, RTF, ODT.');
-            return;
+        
+        // Process each file
+        for (let i = 0; i < fileList.length; i++) {
+            const file = fileList[i];
+            const fileExt = (file.name.split('.').pop() || '').toLowerCase();
+            
+            if (!allowedMimeTypes.includes(file.type) && !allowedExtensions.includes(fileExt)) {
+                this.updateStatus('error', `File "${file.name}" type not supported. Please choose PDF, DOC/DOCX, TXT, MD, RTF, ODT.`);
+                continue;
+            }
+            
+            // Add file to uploaded files array
+            this.uploadedFiles.push({
+                file: file,
+                name: file.name,
+                size: file.size,
+                type: file.type,
+                lastModified: file.lastModified,
+                file_url: null
+            });
         }
         
-        // Store file data for saving
-        this.currentFile = {
-            file: file,
-            name: file.name,
-            size: file.size,
-            type: file.type,
-            lastModified: file.lastModified
-        };
-        
-        document.getElementById('fileName').textContent = file.name;
-        document.getElementById('fileSize').textContent = `${(file.size / 1024 / 1024).toFixed(2)} MB`;
-        document.getElementById('fileInfo').classList.add('show');
-        this.processFile();
+        if (this.uploadedFiles.length > 0) {
+            this.updateFileDisplay();
+            this.processUploadedFiles();
+        }
     }
 
-    processFile() {
+    updateFileDisplay() {
+        const fileInfo = document.getElementById('fileInfo');
+        const fileName = document.getElementById('fileName');
+        const fileSize = document.getElementById('fileSize');
+        let fileList = document.getElementById('fileList');
+        if (!fileList) {
+            fileList = document.createElement('div');
+            fileList.id = 'fileList';
+            fileList.className = 'file-list';
+            fileInfo.appendChild(fileList);
+        }
+        
+        if (this.uploadedFiles.length === 1) {
+            fileName.textContent = this.uploadedFiles[0].name;
+            fileSize.textContent = `${(this.uploadedFiles[0].size / 1024 / 1024).toFixed(2)} MB`;
+            fileList.innerHTML = '';
+        } else {
+            fileName.textContent = 'Files uploaded';
+            fileSize.textContent = '';
+            fileList.innerHTML = this.uploadedFiles.map(f => {
+                const mb = (f.size / 1024 / 1024).toFixed(2);
+                return `<div class=\"file-item\"><span class=\"file-item-name\">${f.name}</span><span class=\"file-item-size\">${mb} MB</span></div>`;
+            }).join('');
+        }
+        
+        fileInfo.classList.add('show');
+    }
+
+    processUploadedFiles() {
         const processingIndicator = document.getElementById('processingIndicator');
         const statusIndicator = document.getElementById('statusIndicator');
         this.isProcessing = true;
         processingIndicator.classList.add('show');
         statusIndicator.className = 'status-indicator processing';
         statusIndicator.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
-        setTimeout(() => {
+        setTimeout(async () => {
+            // Upload files to server (if logged in) to get file_url for each
+            try {
+                if (this.authManager && this.authManager.canSaveChat()) {
+                    await this.uploadFilesToServer();
+                }
+            } catch (e) {
+                // Non-blocking: continue UI even if upload fails
+                console.warn('Upload files failed:', e);
+            }
             processingIndicator.classList.remove('show');
-            this.fileUploaded = true;
+            this.filesUploaded = true;
             this.isProcessing = false;
             const messageInput = document.getElementById('messageInput');
             const sendBtn = document.getElementById('sendBtn');
             messageInput.disabled = false;
             sendBtn.disabled = false;
-            messageInput.placeholder = 'Type your question about the document...';
+            messageInput.placeholder = 'Type your question about the documents...';
             statusIndicator.className = 'status-indicator ready';
             statusIndicator.innerHTML = '<i class="fas fa-check-circle"></i> Ready';
             const welcomeScreen = document.getElementById('welcomeScreen');
             if (welcomeScreen) welcomeScreen.style.display = 'none';
-            this.addMessage('Your document is ready. Ask me anything about it.', 'bot');
+            const fileText = this.uploadedFiles.length === 1 ? 'document' : 'documents';
+            this.addMessage(`Your ${fileText} ${this.uploadedFiles.length === 1 ? 'is' : 'are'} ready. Ask me anything about ${this.uploadedFiles.length === 1 ? 'it' : 'them'}.`, 'bot');
         }, 3000);
     }    
 
     sendMessage() {
         const messageInput = document.getElementById('messageInput');
         const message = messageInput.value.trim();
-        if (!message || !this.fileUploaded || this.isProcessing) return;
+        if (!message || !this.filesUploaded || this.isProcessing) return;
         this.addMessage(message, 'user');
         messageInput.value = '';
         messageInput.style.height = 'auto';
         setTimeout(() => {
             this.generateResponse(message);
         }, 1000);
+    }
+
+    async uploadFilesToServer() {
+        const filesToUpload = this.uploadedFiles.filter(f => f.file && !f.file_url);
+        if (!filesToUpload.length) return;
+        const form = new FormData();
+        filesToUpload.forEach(f => form.append('files', f.file, f.name));
+        const res = await fetch(`${apiClient.baseURL}/chat/upload`, {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${this.authManager.accessToken}`
+            },
+            body: form
+        });
+        if (!res.ok) throw new Error('Upload failed');
+        const json = await res.json();
+        if (!json.success) throw new Error(json.error || 'Upload failed');
+        const byName = new Map(json.data.map(x => [x.name, x]));
+        this.uploadedFiles = this.uploadedFiles.map(f => {
+            const meta = byName.get(f.name);
+            return meta ? { ...f, file_url: meta.file_url, type: f.type || meta.type, size: f.size || meta.size } : f;
+        });
+        this.updateFileDisplay();
     }
 
     addMessage(message, sender) {
@@ -290,14 +450,26 @@ class DocBotApp {
         avatar.className = 'message-avatar';
         const avatarImg = document.createElement('div');
         avatarImg.className = sender === 'user' ? 'avatar-user' : 'avatar-bot';
-        
-        // Thêm icon cho bot avatar
-        if (sender === 'bot') {
+
+        if (sender === 'user') {
+            let avatarUrl = '';
+            if (this.authManager && this.authManager.currentUser && this.authManager.currentUser.avatar_url) {
+                avatarUrl = this.authManager.currentUser.avatar_url;
+            } else if (this.authManager && this.authManager.currentUser && this.authManager.currentUser.email) {
+                avatarUrl = `https://www.gravatar.com/avatar/${md5(this.authManager.currentUser.email.trim().toLowerCase())}?d=identicon`;
+            }
+            if (avatarUrl) {
+                avatarImg.style.backgroundImage = `url('${avatarUrl}')`;
+                avatarImg.style.backgroundSize = 'cover';
+                avatarImg.style.backgroundPosition = 'center';
+            }
+        } else {
+            // Thêm icon cho bot avatar
             const icon = document.createElement('i');
             icon.className = 'fas fa-robot';
             avatarImg.appendChild(icon);
         }
-        
+
         avatar.appendChild(avatarImg);
         const content = document.createElement('div');
         content.className = 'message-content';
@@ -345,9 +517,9 @@ class DocBotApp {
         }
 
         this.chatHistory = [];
-        this.fileUploaded = false;
+        this.filesUploaded = false;
         this.isProcessing = false;
-        this.currentFile = null;
+        this.uploadedFiles = [];
         this.currentChatId = null;
     
         this.clearChatMessages();
@@ -365,17 +537,21 @@ class DocBotApp {
         const sendBtn = document.getElementById('sendBtn');
         messageInput.value = '';
         messageInput.disabled = true;
-        messageInput.placeholder = 'Upload a document to start chatting...';
+        messageInput.placeholder = 'Upload documents to start chatting...';
         sendBtn.disabled = true;
     
         const statusIndicator = document.getElementById('statusIndicator');
         if (statusIndicator) {
             statusIndicator.className = 'status-indicator waiting';
-            statusIndicator.innerHTML = '<i class="fas fa-clock"></i> Waiting for document';
+            statusIndicator.innerHTML = '<i class="fas fa-clock"></i> Waiting for documents';
         }
     
         const fileInfo = document.getElementById('fileInfo');
-        if (fileInfo) fileInfo.classList.remove('show');
+        if (fileInfo) {
+            fileInfo.classList.remove('show');
+            const fileList = document.getElementById('fileList');
+            if (fileList) fileList.innerHTML = '';
+        }
     
         const fileName = document.getElementById('fileName');
         const fileSize = document.getElementById('fileSize');
@@ -462,17 +638,18 @@ class DocBotApp {
         }
 
         const title = this.chatHistory.find(m => m.sender === 'user')?.message?.slice(0, 40) || 'Untitled chat';
-        const fileData = this.currentFile ? {
-            name: this.currentFile.name,
-            size: this.currentFile.size,
-            type: this.currentFile.type,
-            lastModified: this.currentFile.lastModified
-        } : null;
+        const filesData = this.uploadedFiles.map(file => ({
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            lastModified: file.lastModified,
+            file_url: file.file_url
+        }));
 
         const chatData = {
             title,
             messages: this.chatHistory,
-            fileData
+            filesData
         };
 
         const result = await this.chatStorage.saveChat(chatData);
@@ -490,17 +667,18 @@ class DocBotApp {
         if (!this.authManager || !this.chatStorage || !this.authManager.canSaveChat() || !this.chatHistory.length) return;
 
         const title = this.chatHistory.find(m => m.sender === 'user')?.message?.slice(0, 40) || 'Untitled chat';
-        const fileData = this.currentFile ? {
-            name: this.currentFile.name,
-            size: this.currentFile.size,
-            type: this.currentFile.type,
-            lastModified: this.currentFile.lastModified
-        } : null;
+        const filesData = this.uploadedFiles.map(file => ({
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            lastModified: file.lastModified,
+            file_url: file.file_url
+        }));
 
         const chatData = {
             title,
             messages: this.chatHistory,
-            fileData
+            filesData
         };
 
         const result = await this.chatStorage.saveChat(chatData);
@@ -551,19 +729,42 @@ class DocBotApp {
         this.chatHistory = [];
         this.currentChatId = chat.id;
         
-        // Load file info if exists
-        if (chat.file_data) {
-            this.currentFile = {
+        // Load files info if exists
+        if (chat.files_data && chat.files_data.length > 0) {
+            this.uploadedFiles = chat.files_data.map(fileData => ({
                 file: null, // File object not available when loading from database
-                name: chat.file_data.name,
-                size: chat.file_data.size,
-                type: chat.file_data.type,
-                lastModified: chat.file_data.lastModified
-            };
-            document.getElementById('fileName').textContent = chat.file_data.name;
-            document.getElementById('fileSize').textContent = `${(chat.file_data.size / 1024 / 1024).toFixed(2)} MB`;
-            document.getElementById('fileInfo').classList.add('show');
-            this.fileUploaded = true;
+                name: fileData.name,
+                size: fileData.size,
+                type: fileData.type,
+                lastModified: fileData.lastModified
+            }));
+            
+            const fileInfo = document.getElementById('fileInfo');
+            const fileName = document.getElementById('fileName');
+            const fileSize = document.getElementById('fileSize');
+            let fileList = document.getElementById('fileList');
+            if (!fileList) {
+                fileList = document.createElement('div');
+                fileList.id = 'fileList';
+                fileList.className = 'file-list';
+                fileInfo.appendChild(fileList);
+            }
+
+            if (this.uploadedFiles.length === 1) {
+                fileName.textContent = this.uploadedFiles[0].name;
+                fileSize.textContent = `${(this.uploadedFiles[0].size / 1024 / 1024).toFixed(2)} MB`;
+                fileList.innerHTML = '';
+            } else {
+                fileName.textContent = 'Files loaded';
+                fileSize.textContent = '';
+                fileList.innerHTML = this.uploadedFiles.map(f => {
+                    const mb = (f.size / 1024 / 1024).toFixed(2);
+                    return `<div class=\"file-item\"><span class=\"file-item-name\">${f.name}</span><span class=\"file-item-size\">${mb} MB</span></div>`;
+                }).join('');
+            }
+
+            fileInfo.classList.add('show');
+            this.filesUploaded = true;
         }
 
         chat.messages.forEach((m) => {

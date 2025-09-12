@@ -67,13 +67,15 @@ body.light .login-container {
     background: linear-gradient(90deg, #38c6ff 0%, #4f8cff 100%);
     color: #fff;
     border: none;
-    padding: 12px 32px;
-    border-radius: 12px;
+    padding: 14px 24px;
+    border-radius: 16px;
     font-size: 1.08rem;
     font-weight: 700;
     cursor: pointer;
     box-shadow: 0 2px 8px rgba(79,140,255,0.10);
     transition: background 0.2s, box-shadow 0.2s, transform 0.2s;
+    width: 100%;
+    margin-bottom: 8px;
 }
 .btn-primary:hover {
     background: linear-gradient(90deg, #4f8cff 0%, #38c6ff 100%);
@@ -240,6 +242,28 @@ body.light .login-container {
 .btn-secondary {
     background: linear-gradient(135deg, #64748b, #94a3b8);
     box-shadow: 0 4px 15px rgba(100, 116, 139, 0.3);
+    min-width: 40px;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    transition: background 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+.btn-secondary.pw-toggle {
+    background: linear-gradient(135deg, #e0e7ff, #f1f5f9);
+    color: #64748b;
+    border: 1.5px solid #cbd5e1;
+    box-shadow: none;
+}
+.btn-secondary.pw-toggle:hover {
+    background: linear-gradient(135deg, #c7d2fe, #e0e7ff);
+    color: #1e293b;
+    border-color: #64748b;
+    transform: scale(1.08);
 }
 
 .btn:hover {
@@ -346,6 +370,202 @@ body.light .login-container {
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
 }
 
+/* Modal Styles */
+.modal {
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(5px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-content {
+    background: white;
+    border-radius: 16px;
+    padding: 0;
+    max-width: 500px;
+    width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+    animation: modalSlideIn 0.3s ease-out;
+}
+
+@keyframes modalSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-50px) scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.modal-header {
+    padding: 24px 24px 16px;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header h3 {
+    margin: 0;
+    color: #333;
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+.close {
+    color: #aaa;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+    line-height: 1;
+    transition: color 0.3s ease;
+}
+
+.close:hover {
+    color: #333;
+}
+
+.modal-body {
+    padding: 24px;
+}
+
+.modal-body p {
+    margin-bottom: 20px;
+    color: #666;
+    line-height: 1.5;
+}
+
+.forgot-password {
+    color: #2196F3;
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: color 0.3s ease;
+}
+
+.forgot-password:hover {
+    color: #1976D2;
+    text-decoration: underline;
+}
+
+/* Loading states */
+.btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.loading {
+    position: relative;
+    color: transparent;
+}
+
+.loading::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 20px;
+    height: 20px;
+    margin: -10px 0 0 -10px;
+    border: 2px solid transparent;
+    border-top: 2px solid currentColor;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Error and success messages */
+.message {
+    padding: 16px 20px;
+    border-radius: 12px;
+    margin-bottom: 20px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    animation: messageSlideIn 0.3s ease-out;
+    border-left: 4px solid;
+}
+
+@keyframes messageSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.message-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.message-content i {
+    font-size: 1.1rem;
+    flex-shrink: 0;
+}
+
+.message-text {
+    flex: 1;
+    line-height: 1.5;
+}
+
+.message.error {
+    background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+    color: #dc2626;
+    border-left-color: #dc2626;
+    box-shadow: 0 2px 8px rgba(220, 38, 38, 0.15);
+}
+
+.dark .message.error {
+    background: linear-gradient(135deg, rgba(220, 38, 38, 0.1) 0%, rgba(220, 38, 38, 0.05) 100%);
+    color: #fca5a5;
+    border-left-color: #fca5a5;
+}
+
+.message.success {
+    background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+    color: #16a34a;
+    border-left-color: #16a34a;
+    box-shadow: 0 2px 8px rgba(22, 163, 74, 0.15);
+}
+
+.dark .message.success {
+    background: linear-gradient(135deg, rgba(22, 163, 74, 0.1) 0%, rgba(22, 163, 74, 0.05) 100%);
+    color: #86efac;
+    border-left-color: #86efac;
+}
+
+.message.info {
+    background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+    color: #2563eb;
+    border-left-color: #2563eb;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.15);
+}
+
+.dark .message.info {
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.1) 0%, rgba(37, 99, 235, 0.05) 100%);
+    color: #93c5fd;
+    border-left-color: #93c5fd;
+}
+
 @media (max-width: 768px) {
     .login-container {
         padding: 30px 20px;
@@ -359,5 +579,10 @@ body.light .login-container {
     .theme-toggle {
         top: 10px;
         right: 10px;
+    }
+    
+    .modal-content {
+        width: 95%;
+        margin: 10px;
     }
 }
