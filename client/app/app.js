@@ -12,8 +12,10 @@ class DocBotApp {
         this.uploadedFiles = [];
         this.authManager = null;
         this.chatStorage = null;
-        this.currentChatId = null;
-        
+        this.currentChatId = null; // server session id
+        this.firstUserMessageRenamed = false; // rename session after first user message
+        this._fileListHandlersBound = false; // avoid duplicate listeners
+        this._startingNewChat = false; // guard to prevent duplicate session creation
         this.initAuthAndApp();
     }
 
@@ -23,7 +25,6 @@ class DocBotApp {
             this.authManager = new AuthManager();
             this.chatStorage = new ChatStorage();
         }
-        
         await this.initializeApp();
     }
 
@@ -32,15 +33,16 @@ class DocBotApp {
         if (this.authManager) {
             const isLoggedIn = await this.authManager.init();
             if (!isLoggedIn) {
-                // Guest mode: do not redirect; continue with limited features
-                this.currentUser = null;
+                // Must login before using app
+                window.location.href = '../login/index.html';
+                return;
             }
-            
             // Set up auth state change listener
             this.authManager.handleAuthStateChange((event, session) => {
                 if (event === 'SIGNED_OUT') {
                     this.currentUser = null;
                     this.updateUserInterface();
+                    window.location.href = '../login/index.html';
                 } else if (event === 'SIGNED_IN') {
                     // Always use authManager.currentUser for info
                     this.currentUser = this.authManager.currentUser;
@@ -51,7 +53,7 @@ class DocBotApp {
             // If no auth manager, continue in guest mode
             this.currentUser = null;
         }
-        
+
         // Set up chat storage
         if (!this.chatStorage) {
             this.chatStorage = {
@@ -61,11 +63,13 @@ class DocBotApp {
                 deleteChat: () => ({ success: false, error: 'Please sign in to delete chat' })
             };
         }
-        
+
         this.updateUserInterface();
         await this.loadChatHistory();
         this.initializeEventListeners();
         this.setupAutoResize();
+        // Create (or reuse) a fresh 'New chat' session right away and display it
+        try { await this.startNewChatSession(); } catch (e) { console.warn('Start new chat failed:', e); }
     }
 
     updateUserInterface() {
@@ -115,8 +119,8 @@ class DocBotApp {
         const dropZone = document.querySelector('.file-drop-zone');
         const messageInput = document.getElementById('messageInput');
         const sendBtn = document.getElementById('sendBtn');
-        const newChatBtn = document.getElementById('newChatBtn');
-        const exportChatBtn = document.getElementById('exportChatBtn');
+    const newChatBtn = document.getElementById('newChatBtn');
+    // const exportChatBtn = document.getElementById('exportChatBtn');
         const charCounter = document.getElementById('charCounter');
         const copyLastBtn = document.getElementById('copyLastBtn');
         const regenBtn = document.getElementById('regenBtn');
@@ -146,8 +150,8 @@ class DocBotApp {
         messageInput.addEventListener('input', () => {
             if (charCounter) charCounter.textContent = String(messageInput.value.length);
         });
-        if (newChatBtn) newChatBtn.addEventListener('click', () => this.resetChat());
-        if (exportChatBtn) exportChatBtn.addEventListener('click', () => this.exportChat());
+    if (newChatBtn) newChatBtn.addEventListener('click', async (e) => { e.preventDefault(); if (this._startingNewChat) return; this._startingNewChat = true; try { await this.startNewChatSession(); } finally { this._startingNewChat = false; } });
+    // if (exportChatBtn) exportChatBtn.addEventListener('click', () => this.exportChat());
         if (copyLastBtn) copyLastBtn.addEventListener('click', () => this.copyLastAnswer());
         if (regenBtn) regenBtn.addEventListener('click', () => this.regenerateAnswer());
 
@@ -193,20 +197,7 @@ class DocBotApp {
                 }
                 return;
             }
-            // New chat
-            if (target.id === 'newChatBtn' || (target.closest && target.closest('#newChatBtn'))) {
-                console.log('Delegated: newChatBtn');
-                evt.preventDefault();
-                this.resetChat();
-                return;
-            }
-            // Export chat
-            if (target.id === 'exportChatBtn' || (target.closest && target.closest('#exportChatBtn'))) {
-                console.log('Delegated: exportChatBtn');
-                evt.preventDefault();
-                this.exportChat();
-                return;
-            }
+            // Export chat removed from UI
             // Click outside settings menu closes it
             if (settingsMenu && settingsBtn && settingsMenu.classList.contains('show')) {
                 if (!settingsBtn.contains(target) && !settingsMenu.contains(target)) {
@@ -350,46 +341,99 @@ class DocBotApp {
         const fileName = document.getElementById('fileName');
         const fileSize = document.getElementById('fileSize');
         let fileList = document.getElementById('fileList');
+        if (!fileInfo || !fileName || !fileSize) return;
+
+        // No files: hide the section and clear contents
+        if (!this.uploadedFiles || this.uploadedFiles.length === 0) {
+            if (fileList) fileList.innerHTML = '';
+            fileName.textContent = '';
+            fileSize.textContent = '';
+            fileInfo.classList.remove('show');
+            return;
+        }
         if (!fileList) {
             fileList = document.createElement('div');
             fileList.id = 'fileList';
             fileList.className = 'file-list';
             fileInfo.appendChild(fileList);
         }
-        
+
         if (this.uploadedFiles.length === 1) {
             fileName.textContent = this.uploadedFiles[0].name;
             fileSize.textContent = `${(this.uploadedFiles[0].size / 1024 / 1024).toFixed(2)} MB`;
             fileList.innerHTML = '';
         } else {
-            fileName.textContent = 'Files uploaded';
+            fileName.textContent = this.uploadedFiles.length > 0 ? 'Files' : '';
             fileSize.textContent = '';
             fileList.innerHTML = this.uploadedFiles.map(f => {
-                const mb = (f.size / 1024 / 1024).toFixed(2);
-                return `<div class=\"file-item\"><span class=\"file-item-name\">${f.name}</span><span class=\"file-item-size\">${mb} MB</span></div>`;
+                const mb = f.size ? (f.size / 1024 / 1024).toFixed(2) : '';
+                const link = f.file_url ? `<a class="file-link" href="${f.file_url}" target="_blank" rel="noopener noreferrer">${f.name}</a>` : `<span class="file-item-name">${f.name}</span>`;
+                const delBtn = f.id ? `<button class="file-delete" data-file-id="${f.id}" title="Remove file">&times;</button>` : '';
+                return `<div class="file-item" data-file-id="${f.id || ''}">${link}<span class="file-item-size">${mb ? `${mb} MB` : ''}</span>${delBtn}</div>`;
             }).join('');
         }
-        
+
         fileInfo.classList.add('show');
+
+        // Bind file list actions (once)
+        if (!this._fileListHandlersBound) {
+            this._fileListHandlersBound = true;
+            fileList.addEventListener('click', async (e) => {
+                const delBtn = e.target.closest && e.target.closest('.file-delete');
+                if (delBtn) {
+                    e.preventDefault();
+                    const fileId = parseInt(delBtn.getAttribute('data-file-id'), 10);
+                    if (!isNaN(fileId)) {
+                        try {
+                            await apiClient.deleteFile(fileId);
+                            // Remove from local list
+                            this.uploadedFiles = this.uploadedFiles.filter(f => f.id !== fileId);
+                            this.updateFileDisplay();
+                            // If no files left, disable input and update status
+                            if (this.uploadedFiles.length === 0) {
+                                const messageInput = document.getElementById('messageInput');
+                                const sendBtn = document.getElementById('sendBtn');
+                                if (messageInput) { messageInput.disabled = true; messageInput.placeholder = 'Upload documents to start chatting...'; }
+                                if (sendBtn) sendBtn.disabled = true;
+                                const statusIndicator = document.getElementById('statusIndicator');
+                                if (statusIndicator) {
+                                    statusIndicator.className = 'status-indicator waiting';
+                                    statusIndicator.innerHTML = '<i class="fas fa-clock"></i> Waiting for documents';
+                                }
+                            }
+                        } catch (err) {
+                            console.warn('Delete file failed', err);
+                        }
+                    }
+                }
+            });
+        }
     }
 
-    processUploadedFiles() {
+    async processUploadedFiles() {
         const processingIndicator = document.getElementById('processingIndicator');
         const statusIndicator = document.getElementById('statusIndicator');
         this.isProcessing = true;
         processingIndicator.classList.add('show');
         statusIndicator.className = 'status-indicator processing';
         statusIndicator.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
-        setTimeout(async () => {
-            // Upload files to server (if logged in) to get file_url for each
-            try {
-                if (this.authManager && this.authManager.canSaveChat()) {
-                    await this.uploadFilesToServer();
+        try {
+            // Ensure a session exists for uploads
+            await this.ensureChatSession();
+            // Upload files to this.currentChatId
+            if (this.authManager && this.authManager.canSaveChat()) {
+                const uploadedNames = await this.uploadFilesToServer();
+                // After successful upload, inform user with analyzed filenames (Req #8)
+                if (uploadedNames && uploadedNames.length) {
+                    const namesStr = uploadedNames.join(', ');
+                    const analyzedMsg = `I have finished reading and analyzing: ${namesStr}.`;
+                    this.addMessage(analyzedMsg, 'bot');
+                    try { await apiClient.createChatMessage(this.currentChatId, 'bot', analyzedMsg); } catch {}
                 }
-            } catch (e) {
-                // Non-blocking: continue UI even if upload fails
-                console.warn('Upload files failed:', e);
             }
+        } catch (e) {
+            console.warn('Processing/upload error:', e);
+        } finally {
             processingIndicator.classList.remove('show');
             this.filesUploaded = true;
             this.isProcessing = false;
@@ -403,43 +447,98 @@ class DocBotApp {
             const welcomeScreen = document.getElementById('welcomeScreen');
             if (welcomeScreen) welcomeScreen.style.display = 'none';
             const fileText = this.uploadedFiles.length === 1 ? 'document' : 'documents';
-            this.addMessage(`Your ${fileText} ${this.uploadedFiles.length === 1 ? 'is' : 'are'} ready. Ask me anything about ${this.uploadedFiles.length === 1 ? 'it' : 'them'}.`, 'bot');
-        }, 3000);
+            const readyMsg = `Your ${fileText} ${this.uploadedFiles.length === 1 ? 'is' : 'are'} ready. Ask me anything about ${this.uploadedFiles.length === 1 ? 'it' : 'them'}.`;
+            this.addMessage(readyMsg, 'bot');
+            // Persist bot message (requirement #8)
+            try { await apiClient.createChatMessage(this.currentChatId, 'bot', readyMsg); } catch {}
+        }
     }    
-
-    sendMessage() {
+    async sendMessage() {
         const messageInput = document.getElementById('messageInput');
         const message = messageInput.value.trim();
-        if (!message || !this.filesUploaded || this.isProcessing) return;
+        if (!message || this.isProcessing) return;
+        // Disallow sending if session has no file (requirement #3)
+        if (!this.uploadedFiles || this.uploadedFiles.length === 0) {
+            this.addMessage('Please upload at least one document to start chatting.', 'bot');
+            return;
+        }
+        // Rename chat on first user message (requirement #7)
+        try {
+            await this.ensureChatSession();
+            if (!this.firstUserMessageRenamed) {
+                const newTitle = message.slice(0, 60);
+                await apiClient.renameChat(this.currentChatId, newTitle);
+                this.firstUserMessageRenamed = true;
+                // Visual pulse on active history item
+                const activeLi = document.querySelector(`#historyList li[data-id="${this.currentChatId}"]`);
+                if (activeLi) { activeLi.classList.add('pulse'); setTimeout(() => activeLi.classList.remove('pulse'), 700); }
+                // Refresh history
+                await this.loadChatHistory();
+            }
+        } catch {}
         this.addMessage(message, 'user');
+        // Persist user message before processing
+        try { await apiClient.createChatMessage(this.currentChatId, 'user', message); } catch {}
         messageInput.value = '';
         messageInput.style.height = 'auto';
-        setTimeout(() => {
-            this.generateResponse(message);
-        }, 1000);
+        try {
+            const thinking = this.addTypingIndicator();
+            const res = await apiClient.processMessage(this.currentChatId, message);
+            if (thinking && thinking.remove) thinking.remove();
+            const answer = res?.data?.answer || res?.answer || 'No answer';
+            this.addMessage(answer, 'bot');
+            const copyLastBtnRef = document.getElementById('copyLastBtn');
+            if (copyLastBtnRef) copyLastBtnRef.disabled = false;
+            const regenBtnRef = document.getElementById('regenBtn');
+            if (regenBtnRef) regenBtnRef.disabled = false;
+        } catch (e) {
+            this.addMessage(`Error: ${e.message || e}`, 'bot');
+        }
     }
 
     async uploadFilesToServer() {
         const filesToUpload = this.uploadedFiles.filter(f => f.file && !f.file_url);
         if (!filesToUpload.length) return;
-        const form = new FormData();
-        filesToUpload.forEach(f => form.append('files', f.file, f.name));
-        const res = await fetch(`${apiClient.baseURL}/chat/upload`, {
-            method: 'POST',
-            headers: {
-                Authorization: `Bearer ${this.authManager.accessToken}`
-            },
-            body: form
-        });
-        if (!res.ok) throw new Error('Upload failed');
-        const json = await res.json();
-        if (!json.success) throw new Error(json.error || 'Upload failed');
-        const byName = new Map(json.data.map(x => [x.name, x]));
-        this.uploadedFiles = this.uploadedFiles.map(f => {
-            const meta = byName.get(f.name);
-            return meta ? { ...f, file_url: meta.file_url, type: f.type || meta.type, size: f.size || meta.size } : f;
-        });
+        const uploadedNames = [];
+        for (const f of filesToUpload) {
+            const uploaded = await apiClient.uploadFileToSession(this.currentChatId, f.file);
+            // uploaded.data contains file record { id, db_response: [ { filename, file_url, file_type, file_size, id } ] }
+            const info = uploaded?.data?.db_response?.[0] || {};
+            f.id = uploaded?.data?.id || info.id || f.id;
+            f.file_url = info.file_url || f.file_url || null;
+            f.type = f.type || info.file_type || f.file?.type || '';
+            f.size = f.size || info.file_size || f.file?.size || 0;
+            uploadedNames.push(f.name || info.filename || `file_${f.id || ''}`);
+        }
         this.updateFileDisplay();
+        return uploadedNames;
+    }
+
+    formatBotAnswer(text) {
+        if (text == null) return '';
+        let s = String(text).replace(/\r\n/g, '\n');
+        // Capture markdown bold **...** before escaping
+        const boldSegments = [];
+        s = s.replace(/\*\*(.+?)\*\*/gs, (_, p1) => {
+            boldSegments.push(p1);
+            return `\u0000B${boldSegments.length - 1}\u0000`;
+        });
+        // Escape HTML
+        const escape = (str) => str
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/\"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+        s = escape(s);
+        // Restore bold segments with their own escaping
+        s = s.replace(/\u0000B(\d+)\u0000/g, (_, idx) => {
+            const content = boldSegments[Number(idx)] ?? '';
+            return `<strong>${escape(String(content))}</strong>`;
+        });
+        // Convert newlines to <br>
+        s = s.replace(/\n/g, '<br>');
+        return s;
     }
 
     addMessage(message, sender) {
@@ -473,7 +572,11 @@ class DocBotApp {
         avatar.appendChild(avatarImg);
         const content = document.createElement('div');
         content.className = 'message-content';
-        content.textContent = message;
+        if (sender === 'bot') {
+            content.innerHTML = this.formatBotAnswer(message);
+        } else {
+            content.textContent = message;
+        }
         const time = document.createElement('div');
         time.className = 'message-time';
         time.textContent = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
@@ -483,6 +586,28 @@ class DocBotApp {
         chatMessages.appendChild(messageDiv);
         chatMessages.scrollTop = chatMessages.scrollHeight;
         this.chatHistory.push({ sender, message, at: Date.now() });
+    }
+
+    addTypingIndicator() {
+        const chatMessages = document.getElementById('chatMessages');
+        const wrap = document.createElement('div');
+        wrap.className = 'message bot';
+        const avatar = document.createElement('div');
+        avatar.className = 'message-avatar';
+        const avatarImg = document.createElement('div');
+        avatarImg.className = 'avatar-bot';
+        const icon = document.createElement('i');
+        icon.className = 'fas fa-robot';
+        avatarImg.appendChild(icon);
+        avatar.appendChild(avatarImg);
+        const content = document.createElement('div');
+        content.className = 'message-content';
+        content.innerHTML = '<span class="typing-dots"><span>.</span><span>.</span><span>.</span></span>';
+        wrap.appendChild(avatar);
+        wrap.appendChild(content);
+        chatMessages.appendChild(wrap);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+        return wrap;
     }
 
     generateResponse(userMessage) {
@@ -516,15 +641,20 @@ class DocBotApp {
             await this.autoSaveChat();
         }
 
+        await this.startNewChatSession();
+    }
+
+    async startNewChatSession() {
+        // Reset UI for a brand new chat
         this.chatHistory = [];
         this.filesUploaded = false;
         this.isProcessing = false;
         this.uploadedFiles = [];
         this.currentChatId = null;
-    
+        this.firstUserMessageRenamed = false;
+
         this.clearChatMessages();
-    
-        // Đảm bảo welcome screen hiển thị đúng cách
+
         const welcomeScreen = document.getElementById('welcomeScreen');
         if (welcomeScreen) {
             welcomeScreen.style.display = 'flex';
@@ -532,34 +662,70 @@ class DocBotApp {
             welcomeScreen.style.alignItems = 'center';
             welcomeScreen.style.justifyContent = 'center';
         }
-    
+
         const messageInput = document.getElementById('messageInput');
         const sendBtn = document.getElementById('sendBtn');
         messageInput.value = '';
         messageInput.disabled = true;
         messageInput.placeholder = 'Upload documents to start chatting...';
         sendBtn.disabled = true;
-    
+
         const statusIndicator = document.getElementById('statusIndicator');
         if (statusIndicator) {
             statusIndicator.className = 'status-indicator waiting';
             statusIndicator.innerHTML = '<i class="fas fa-clock"></i> Waiting for documents';
         }
-    
+
         const fileInfo = document.getElementById('fileInfo');
         if (fileInfo) {
             fileInfo.classList.remove('show');
             const fileList = document.getElementById('fileList');
             if (fileList) fileList.innerHTML = '';
         }
-    
+
         const fileName = document.getElementById('fileName');
         const fileSize = document.getElementById('fileSize');
         if (fileName) fileName.textContent = '';
         if (fileSize) fileSize.textContent = '';
-    
+
         const fileInput = document.getElementById('fileInput');
         if (fileInput) fileInput.value = '';
+
+        // Create (or reuse) a fresh/unattached session via API and show it
+        try {
+            if (!this.authManager || !this.authManager.isLoggedIn()) {
+                throw new Error('Please sign in to start chatting');
+            }
+            const created = await apiClient.createChat('New chat');
+            this.currentChatId = created.data.id;
+
+            // Load messages to check if greeting exists
+            let hasMessages = false;
+            try {
+                const existing = await apiClient.getChatMessages(this.currentChatId);
+                const msgs = existing.data || existing || [];
+                hasMessages = Array.isArray(msgs) && msgs.length > 0;
+            } catch (err) {
+                hasMessages = false; // 404 => no messages
+            }
+            if (!hasMessages) {
+                const greet = 'Hello! Upload your documents (PDF, WORD, TXT, MARKDOWN) and ask me questions. I will answer based on your files.';
+                try { await apiClient.createChatMessage(this.currentChatId, 'bot', greet); } catch {}
+                if (welcomeScreen) welcomeScreen.style.display = 'none';
+                this.addMessage(greet, 'bot');
+            }
+
+            // Refresh history and mark this session active
+            await this.loadChatHistory();
+            const list = document.getElementById('historyList');
+            if (list) {
+                list.querySelectorAll('li').forEach(x => x.classList.remove('active'));
+                const li = list.querySelector(`li[data-id="${this.currentChatId}"]`);
+                if (li) li.classList.add('active');
+            }
+        } catch (err) {
+            console.warn('Unable to start new chat session:', err);
+        }
     }
     
     clearChatMessages() {
@@ -692,7 +858,29 @@ class DocBotApp {
 
         const result = await this.chatStorage.getChats();
         if (result.success) {
-            this.refreshHistoryList(result.data);
+            // Normalize to expected shape
+            const chats = (result.data || []).map(s => ({
+                id: s.id,
+                title: s.session_name || s.title || 'New Chat',
+                created_at: s.created_at,
+                updated_at: s.updated_at,
+            }));
+            // Sort by updated_at desc, fallback to created_at
+            chats.sort((a, b) => {
+                const ta = new Date(a.updated_at || a.created_at || 0).getTime();
+                const tb = new Date(b.updated_at || b.created_at || 0).getTime();
+                return tb - ta;
+            });
+            this.refreshHistoryList(chats);
+            // Keep current chat highlighted after reload
+            if (this.currentChatId) {
+                const list = document.getElementById('historyList');
+                if (list) {
+                    list.querySelectorAll('li').forEach(x => x.classList.remove('active'));
+                    const li = list.querySelector(`li[data-id="${this.currentChatId}"]`);
+                    if (li) li.classList.add('active');
+                }
+            }
         }
     }
 
@@ -707,10 +895,10 @@ class DocBotApp {
             li.innerHTML = `
                 <div class="chat-item">
                     <span class="chat-title">${chat.title}</span>
-                    <span class="chat-meta">${new Date(chat.created_at).toLocaleString()}</span>
+                    <span class="chat-meta">${new Date(chat.updated_at || chat.created_at).toLocaleString()}</span>
                     <div class="chat-actions">
-                        <button class="btn-rename" onclick="event.stopPropagation(); app.renameChat('${chat.id}', '${chat.title}')">Rename</button>
-                        <button class="btn-delete" onclick="event.stopPropagation(); app.deleteChat('${chat.id}')">Delete</button>
+                        <button class="btn-rename" onclick="event.stopPropagation(); app.renameChatInline('${chat.id}')">Rename</button>
+                        <button class="btn-delete" onclick="event.stopPropagation(); app.confirmDeleteChatInline('${chat.id}')">Delete</button>
                     </div>
                 </div>
             `;
@@ -723,120 +911,206 @@ class DocBotApp {
         });
     }
 
+    renameChatInline(chatId) {
+        const list = document.getElementById('historyList');
+        if (!list) return;
+        const li = list.querySelector(`li[data-id="${chatId}"]`);
+        if (!li) return;
+        const titleSpan = li.querySelector('.chat-title');
+        if (!titleSpan) return;
+        const currentTitle = titleSpan.textContent;
+        // Prevent multiple editors
+        if (li.querySelector('.rename-input')) return;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = currentTitle;
+        input.className = 'rename-input';
+        input.style.marginRight = '8px';
+        const saveBtn = document.createElement('button');
+        saveBtn.textContent = 'Save';
+        saveBtn.className = 'btn-small';
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.className = 'btn-small';
+        // Replace titleSpan temporarily
+        const parent = titleSpan.parentElement;
+        titleSpan.style.display = 'none';
+        parent.insertBefore(input, titleSpan);
+        parent.insertBefore(saveBtn, titleSpan);
+        parent.insertBefore(cancelBtn, titleSpan);
+        const cleanup = () => { input.remove(); saveBtn.remove(); cancelBtn.remove(); titleSpan.style.display = ''; };
+        cancelBtn.onclick = (e) => { e.preventDefault(); cleanup(); };
+        saveBtn.onclick = async (e) => {
+            e.preventDefault();
+            const newTitle = input.value.trim();
+            if (!newTitle || newTitle === currentTitle) { cleanup(); return; }
+            try {
+                const res = await this.chatStorage.updateChatTitle(chatId, newTitle);
+                if (res && res.success) {
+                    titleSpan.textContent = newTitle;
+                    cleanup();
+                    // pulse effect
+                    li.classList.add('pulse');
+                    setTimeout(() => li.classList.remove('pulse'), 700);
+                } else {
+                    cleanup();
+                }
+            } catch { cleanup(); }
+        };
+        input.focus();
+        input.select();
+    }
+
+    confirmDeleteChatInline(chatId) {
+        const list = document.getElementById('historyList');
+        if (!list) return;
+        const li = list.querySelector(`li[data-id="${chatId}"]`);
+        if (!li) return;
+        if (li.querySelector('.delete-confirm')) return;
+        const confirmWrap = document.createElement('div');
+        confirmWrap.className = 'delete-confirm';
+        confirmWrap.style.display = 'inline-flex';
+        confirmWrap.style.gap = '8px';
+        confirmWrap.style.marginLeft = '8px';
+        const text = document.createElement('span');
+        text.textContent = 'Delete this chat?';
+        const yesBtn = document.createElement('button');
+        yesBtn.textContent = 'Yes';
+        yesBtn.className = 'btn-small';
+        const noBtn = document.createElement('button');
+        noBtn.textContent = 'No';
+        noBtn.className = 'btn-small';
+        confirmWrap.appendChild(text);
+        confirmWrap.appendChild(yesBtn);
+        confirmWrap.appendChild(noBtn);
+        const actions = li.querySelector('.chat-actions');
+        actions.appendChild(confirmWrap);
+        const cleanup = () => confirmWrap.remove();
+        noBtn.onclick = (e) => { e.preventDefault(); cleanup(); };
+        yesBtn.onclick = async (e) => {
+            e.preventDefault();
+            cleanup();
+            await this.deleteChat(chatId);
+        };
+    }
+
     async loadChat(chat) {
         this.clearChatMessages();
         const chatMessages = document.getElementById('chatMessages');
         this.chatHistory = [];
         this.currentChatId = chat.id;
+        this.firstUserMessageRenamed = true; // assume already named if in history
         
-        // Load files info if exists
-        if (chat.files_data && chat.files_data.length > 0) {
-            this.uploadedFiles = chat.files_data.map(fileData => ({
-                file: null, // File object not available when loading from database
-                name: fileData.name,
-                size: fileData.size,
-                type: fileData.type,
-                lastModified: fileData.lastModified
+        // Load files info from server (session_files -> fetch each file detail)
+        try {
+            const filesRes = await apiClient.getChatFiles(chat.id);
+            const files = filesRes.data || [];
+            const detailed = await Promise.all(files.map(async (sf) => {
+                try {
+                    const infoRes = await apiClient.getFile(sf.file_id);
+                    const info = infoRes.data || infoRes;
+                    return {
+                        id: info.id || sf.file_id,
+                        file: null,
+                        name: info.filename || 'file',
+                        size: info.file_size || 0,
+                        type: info.file_type || '',
+                        lastModified: null,
+                        file_url: info.file_url || null,
+                    };
+                } catch {
+                    return { id: sf.file_id, file: null, name: `file_${sf.file_id}`, size: 0, type: '', lastModified: null, file_url: null };
+                }
             }));
-            
-            const fileInfo = document.getElementById('fileInfo');
-            const fileName = document.getElementById('fileName');
-            const fileSize = document.getElementById('fileSize');
-            let fileList = document.getElementById('fileList');
-            if (!fileList) {
-                fileList = document.createElement('div');
-                fileList.id = 'fileList';
-                fileList.className = 'file-list';
-                fileInfo.appendChild(fileList);
-            }
+            this.uploadedFiles = detailed;
+        } catch {}
 
-            if (this.uploadedFiles.length === 1) {
-                fileName.textContent = this.uploadedFiles[0].name;
-                fileSize.textContent = `${(this.uploadedFiles[0].size / 1024 / 1024).toFixed(2)} MB`;
-                fileList.innerHTML = '';
-            } else {
-                fileName.textContent = 'Files loaded';
-                fileSize.textContent = '';
-                fileList.innerHTML = this.uploadedFiles.map(f => {
-                    const mb = (f.size / 1024 / 1024).toFixed(2);
-                    return `<div class=\"file-item\"><span class=\"file-item-name\">${f.name}</span><span class=\"file-item-size\">${mb} MB</span></div>`;
-                }).join('');
-            }
-
-            fileInfo.classList.add('show');
-            this.filesUploaded = true;
+        // Render file section using common renderer
+        this.updateFileDisplay();
+        this.filesUploaded = this.uploadedFiles.length > 0;
+        // Enable/disable input based on files exist
+        const messageInput = document.getElementById('messageInput');
+        const sendBtn = document.getElementById('sendBtn');
+        if (this.filesUploaded) {
+            messageInput.disabled = false; sendBtn.disabled = false;
+            messageInput.placeholder = 'Type your question about the documents...';
+            const statusIndicator = document.getElementById('statusIndicator');
+            if (statusIndicator) { statusIndicator.className = 'status-indicator ready'; statusIndicator.innerHTML = '<i class="fas fa-check-circle"></i> Ready'; }
+        } else {
+            messageInput.disabled = true; sendBtn.disabled = true;
+            messageInput.placeholder = 'Upload documents to start chatting...';
+            const statusIndicator = document.getElementById('statusIndicator');
+            if (statusIndicator) { statusIndicator.className = 'status-indicator waiting'; statusIndicator.innerHTML = '<i class="fas fa-clock"></i> Waiting for documents'; }
         }
 
-        chat.messages.forEach((m) => {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${m.sender}`;
-            const avatar = document.createElement('div');
-            avatar.className = 'message-avatar';
-            const avatarImg = document.createElement('div');
-            avatarImg.className = m.sender === 'user' ? 'avatar-user' : 'avatar-bot';
-            
-            // Thêm icon cho bot avatar
-            if (m.sender === 'bot') {
-                const icon = document.createElement('i');
-                icon.className = 'fas fa-robot';
-                avatarImg.appendChild(icon);
-            }
-            
-            avatar.appendChild(avatarImg);
-            const content = document.createElement('div');
-            content.className = 'message-content';
-            content.textContent = m.message;
-            const time = document.createElement('div');
-            time.className = 'message-time';
-            time.textContent = new Date(m.at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-            content.appendChild(time);
-            messageDiv.appendChild(avatar);
-            messageDiv.appendChild(content);
-            chatMessages.appendChild(messageDiv);
-            this.chatHistory.push(m);
-        });
+        // Load messages from server
+        try {
+            const msgRes = await apiClient.getChatMessages(chat.id);
+            const msgs = msgRes.data || [];
+            msgs.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+            msgs.forEach(m => {
+                const sender = m.role === 'user' ? 'user' : 'bot';
+                const contentText = m.message || m.content || '';
+                const msg = { sender, message: contentText, at: new Date(m.created_at).getTime() };
+                this.addMessage(msg.message, msg.sender);
+                // Replace last pushed timestamp with actual
+                this.chatHistory[this.chatHistory.length - 1].at = msg.at;
+            });
+        } catch {}
         chatMessages.scrollTop = chatMessages.scrollHeight;
         
         const copyLastBtn = document.getElementById('copyLastBtn');
-        if (copyLastBtn) copyLastBtn.disabled = !chat.messages.some(x => x.sender === 'bot');
+        if (copyLastBtn) copyLastBtn.disabled = !this.chatHistory.some(x => x.sender === 'bot');
         const regenBtn = document.getElementById('regenBtn');
-        if (regenBtn) regenBtn.disabled = !chat.messages.some(x => x.sender === 'user');
+        if (regenBtn) regenBtn.disabled = !this.chatHistory.some(x => x.sender === 'user');
     }
 
-    async renameChat(chatId, currentTitle) {
-        if (!this.chatStorage) {
-            alert('Please sign in to rename chat');
-            return;
-        }
-
-        const newTitle = prompt('Enter new name for chat:', currentTitle);
-        if (newTitle && newTitle !== currentTitle) {
-            const result = await this.chatStorage.updateChatTitle(chatId, newTitle);
-            if (result.success) {
-                await this.loadChatHistory();
-            } else {
-                alert('Error renaming chat: ' + result.error);
-            }
-        }
-    }
+    async renameChat(chatId, currentTitle) { this.renameChatInline(chatId); }
 
     async deleteChat(chatId) {
-        if (!this.chatStorage) {
-            alert('Please sign in to delete chat');
-            return;
+        if (!this.chatStorage) { return; }
+        // Fade-out effect on the item
+        const list = document.getElementById('historyList');
+        const li = list ? list.querySelector(`li[data-id="${chatId}"]`) : null;
+        if (li) {
+            li.classList.add('fade-out');
+            await new Promise(res => setTimeout(res, 250));
         }
-
-        if (confirm('Are you sure you want to delete this chat?')) {
-            const result = await this.chatStorage.deleteChat(chatId);
-            if (result.success) {
-                await this.loadChatHistory();
-                if (this.currentChatId === chatId) {
-                    this.resetChat();
-                }
-            } else {
-                alert('Error deleting chat: ' + result.error);
+        const result = await this.chatStorage.deleteChat(chatId);
+        if (result.success) {
+            await this.loadChatHistory();
+            if (this.currentChatId === chatId) {
+                this.startNewChatSession();
             }
+        } else {
+            // silently fail without alert; optionally log
+            console.warn('Delete chat failed:', result.error);
         }
+    }
+
+    async ensureChatSession() {
+        if (this.currentChatId) return this.currentChatId;
+        if (!this.authManager || !this.authManager.isLoggedIn()) {
+            throw new Error('Please sign in to start chatting');
+        }
+        // Create with default title (requirement #7)
+        const created = await apiClient.createChat('New chat');
+        this.currentChatId = created.data.id;
+        // Greeting bot message if empty (requirement #8)
+        let hasMessages = false;
+        try {
+            const existing = await apiClient.getChatMessages(this.currentChatId);
+            const msgs = existing.data || existing || [];
+            hasMessages = Array.isArray(msgs) && msgs.length > 0;
+        } catch (err) { hasMessages = false; }
+        if (!hasMessages) {
+            const greet = 'Hello! Upload your documents (PDF, WORD, TXT, MARKDOWN) and ask me questions. I will answer based on your files.';
+            try { await apiClient.createChatMessage(this.currentChatId, 'bot', greet); } catch {}
+            const welcomeScreen = document.getElementById('welcomeScreen');
+            if (welcomeScreen) welcomeScreen.style.display = 'none';
+            this.addMessage(greet, 'bot');
+        }
+        return this.currentChatId;
     }
 }
 

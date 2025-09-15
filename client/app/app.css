@@ -34,6 +34,21 @@
     30%, 50%, 70% { transform: translateX(-8px); }
     40%, 60% { transform: translateX(8px); }
 }
+/* subtle pulse for history item rename */
+.pulse {
+    animation: pulse 0.7s ease-out 1;
+}
+@keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(56,198,255, 0.7); }
+    100% { box-shadow: 0 0 0 12px rgba(56,198,255, 0); }
+}
+/* fade out for delete animations */
+.fade-out {
+    animation: fadeOut 0.25s ease forwards;
+}
+@keyframes fadeOut {
+    to { opacity: 0; transform: translateY(-4px); }
+}
 * {
     margin: 0;
     padding: 0;
@@ -317,6 +332,25 @@ body.dark .header-action-buttons .btn-small:hover {
     gap: 6px;
     white-space: nowrap;
 }
+
+/* file list styles */
+.file-list { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+.file-item { display: flex; align-items: center; gap: 10px; padding: 6px 8px; background: rgba(15,23,42,0.03); border-radius: 8px; }
+.file-item .file-link { color: #334155; text-decoration: none; font-weight: 500; }
+.file-item .file-link:hover { text-decoration: underline; }
+.file-item .file-item-size { margin-left: auto; color: #64748b; font-size: 12px; }
+.file-item .file-delete { margin-left: 6px; background: transparent; border: none; color: #ef4444; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 6px; }
+.file-item .file-delete:hover { color: #dc2626; transform: scale(1.05); }
+
+/* inline rename/delete controls */
+.rename-input {
+    padding: 4px 8px;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    font-size: 0.95rem;
+}
+.delete-confirm span { color: #b91c1c; font-size: 0.9rem; }
+.delete-confirm .btn-small { padding: 4px 8px; }
 
 .status-indicator.ready {
     background: rgba(34, 197, 94, 0.1);
