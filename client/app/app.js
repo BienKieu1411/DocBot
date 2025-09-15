@@ -1054,7 +1054,7 @@ class DocBotApp {
         this.chatHistory = [];
         this.currentChatId = chat.id;
         try { localStorage.setItem('lastChatId', String(this.currentChatId)); } catch {}
-        this.firstUserMessageRenamed = true; // assume already named if in history
+        // Don't assume renamed; we'll determine after loading messages and title
         // Immediately reset file UI to avoid bleed from previous chat
         this.uploadedFiles = [];
         this.updateFileDisplay();
@@ -1106,9 +1106,10 @@ class DocBotApp {
         }
 
         // Load messages from server
+        let msgs = [];
         try {
             const msgRes = await apiClient.getChatMessages(chat.id);
-            const msgs = msgRes.data || [];
+            msgs = msgRes.data || [];
             msgs.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
             msgs.forEach(m => {
                 const sender = m.role === 'user' ? 'user' : 'bot';
@@ -1125,6 +1126,12 @@ class DocBotApp {
         if (copyLastBtn) copyLastBtn.disabled = !this.chatHistory.some(x => x.sender === 'bot');
         const regenBtn = document.getElementById('regenBtn');
         if (regenBtn) regenBtn.disabled = !this.chatHistory.some(x => x.sender === 'user');
+
+        // Decide if we should auto-rename on first user message for this chat
+        const hasUserMsg = Array.isArray(msgs) && msgs.some(m => (m.role === 'user' || m.sender === 'user'));
+        const isDefaultTitle = ((chat.title || '').trim().toLowerCase() === 'new chat');
+        // If there's already any user message, or the title is not the default, consider it already renamed
+        this.firstUserMessageRenamed = hasUserMsg || !isDefaultTitle ? true : false;
     }
 
     async renameChat(chatId, currentTitle) { this.renameChatInline(chatId); }
