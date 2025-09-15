@@ -65,11 +65,24 @@ class DocBotApp {
         }
 
         this.updateUserInterface();
-        await this.loadChatHistory();
+        const chats = await this.loadChatHistory();
         this.initializeEventListeners();
         this.setupAutoResize();
-        // Create (or reuse) a fresh 'New chat' session right away and display it
-        try { await this.startNewChatSession(); } catch (e) { console.warn('Start new chat failed:', e); }
+        // Open newest existing chat if available; otherwise create a new one
+        try {
+            if (Array.isArray(chats) && chats.length > 0) {
+                this.currentChatId = chats[0].id;
+                await this.loadChat(chats[0]);
+                const list = document.getElementById('historyList');
+                if (list) {
+                    list.querySelectorAll('li').forEach(x => x.classList.remove('active'));
+                    const li = list.querySelector(`li[data-id="${this.currentChatId}"]`);
+                    if (li) li.classList.add('active');
+                }
+            } else {
+                await this.startNewChatSession();
+            }
+        } catch (e) { console.warn('Init open chat failed:', e); }
     }
 
     updateUserInterface() {
@@ -127,7 +140,11 @@ class DocBotApp {
         const themeToggleBtn = document.getElementById('themeToggleBtn');
         const saveChatBtn = document.getElementById('saveChatBtn');
 
-        fileInput.addEventListener('change', (e) => this.handleFileUpload(e));
+        fileInput.addEventListener('change', (e) => {
+            this.handleFileUpload(e);
+            // Allow re-adding same files after deletion by resetting input
+            e.target.value = '';
+        });
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
             dropZone.addEventListener(eventName, (e) => e.preventDefault());
         });
@@ -150,7 +167,7 @@ class DocBotApp {
         messageInput.addEventListener('input', () => {
             if (charCounter) charCounter.textContent = String(messageInput.value.length);
         });
-    if (newChatBtn) newChatBtn.addEventListener('click', async (e) => { e.preventDefault(); if (this._startingNewChat) return; this._startingNewChat = true; try { await this.startNewChatSession(); } finally { this._startingNewChat = false; } });
+    if (newChatBtn) newChatBtn.addEventListener('click', async (e) => { e.preventDefault(); if (this._startingNewChat) return; this._startingNewChat = true; try { await this.openDefaultOrCreate(); } finally { this._startingNewChat = false; } });
     // if (exportChatBtn) exportChatBtn.addEventListener('click', () => this.exportChat());
         if (copyLastBtn) copyLastBtn.addEventListener('click', () => this.copyLastAnswer());
         if (regenBtn) regenBtn.addEventListener('click', () => this.regenerateAnswer());
@@ -388,8 +405,14 @@ class DocBotApp {
                         try {
                             await apiClient.deleteFile(fileId);
                             // Remove from local list
+                            const removed = this.uploadedFiles.find(f => f.id === fileId);
                             this.uploadedFiles = this.uploadedFiles.filter(f => f.id !== fileId);
                             this.updateFileDisplay();
+                            // Inform user and persist bot message about file removal
+                            const removedName = removed?.name ? `"${removed.name}"` : 'the file';
+                            const removedMsg = `I have removed ${removedName} from this chat.`;
+                            this.addMessage(removedMsg, 'bot');
+                            try { await apiClient.createChatMessage(this.currentChatId, 'bot', removedMsg); } catch {}
                             // If no files left, disable input and update status
                             if (this.uploadedFiles.length === 0) {
                                 const messageInput = document.getElementById('messageInput');
@@ -401,6 +424,9 @@ class DocBotApp {
                                     statusIndicator.className = 'status-indicator waiting';
                                     statusIndicator.innerHTML = '<i class="fas fa-clock"></i> Waiting for documents';
                                 }
+                                // Reset file input so same files can be added again
+                                const fileInputEl = document.getElementById('fileInput');
+                                if (fileInputEl) fileInputEl.value = '';
                             }
                         } catch (err) {
                             console.warn('Delete file failed', err);
@@ -882,7 +908,9 @@ class DocBotApp {
                     if (li) li.classList.add('active');
                 }
             }
+            return chats;
         }
+        return [];
     }
 
     refreshHistoryList(chats = []) {
@@ -970,6 +998,15 @@ class DocBotApp {
         this.chatHistory = [];
         this.currentChatId = chat.id;
         this.firstUserMessageRenamed = true; // assume already named if in history
+        // Immediately reset file UI to avoid bleed from previous chat
+        this.uploadedFiles = [];
+        this.updateFileDisplay();
+        const messageInput = document.getElementById('messageInput');
+        const sendBtn = document.getElementById('sendBtn');
+        if (messageInput) { messageInput.disabled = true; messageInput.placeholder = 'Upload documents to start chatting...'; }
+        if (sendBtn) sendBtn.disabled = true;
+        const statusIndicator = document.getElementById('statusIndicator');
+        if (statusIndicator) { statusIndicator.className = 'status-indicator waiting'; statusIndicator.innerHTML = '<i class="fas fa-clock"></i> Waiting for documents'; }
         
         // Load files info from server (session_files -> fetch each file detail)
         try {
@@ -999,8 +1036,6 @@ class DocBotApp {
         this.updateFileDisplay();
         this.filesUploaded = this.uploadedFiles.length > 0;
         // Enable/disable input based on files exist
-        const messageInput = document.getElementById('messageInput');
-        const sendBtn = document.getElementById('sendBtn');
         if (this.filesUploaded) {
             messageInput.disabled = false; sendBtn.disabled = false;
             messageInput.placeholder = 'Type your question about the documents...';
@@ -1048,9 +1083,21 @@ class DocBotApp {
         }
         const result = await this.chatStorage.deleteChat(chatId);
         if (result.success) {
-            await this.loadChatHistory();
-            if (this.currentChatId === chatId) {
-                this.startNewChatSession();
+            const deletedIdStr = String(chatId ?? '');
+            const currentIdStr = String(this.currentChatId ?? '');
+            const wasCurrent = deletedIdStr === currentIdStr;
+            if (wasCurrent) {
+                // Ensure we create and switch to a fresh default chat
+                this.currentChatId = null;
+                try {
+                    if (this._startingNewChat) return;
+                    this._startingNewChat = true;
+                    await this.startNewChatSession();
+                } finally {
+                    this._startingNewChat = false;
+                }
+            } else {
+                await this.loadChatHistory();
             }
         } else {
             // silently fail without alert; optionally log
@@ -1081,6 +1128,28 @@ class DocBotApp {
             this.addMessage(greet, 'bot');
         }
         return this.currentChatId;
+    }
+
+    async openDefaultOrCreate() {
+        // Try to find existing default "New chat" in history, prefer the newest one
+        const chats = await this.loadChatHistory();
+        if (Array.isArray(chats) && chats.length > 0) {
+            const defaultChats = chats.filter(c => (c.title || '').toLowerCase() === 'new chat');
+            const target = defaultChats[0] || chats[0];
+            if (target) {
+                this.currentChatId = target.id;
+                await this.loadChat(target);
+                const list = document.getElementById('historyList');
+                if (list) {
+                    list.querySelectorAll('li').forEach(x => x.classList.remove('active'));
+                    const li = list.querySelector(`li[data-id="${this.currentChatId}"]`);
+                    if (li) li.classList.add('active');
+                }
+                return;
+            }
+        }
+        // Fallback: no chat exists, create a new one
+        await this.startNewChatSession();
     }
 }
 

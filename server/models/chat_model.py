@@ -92,6 +92,7 @@ def delete_chat_session(session_id: int) -> bool:
 def delete_file_from_session(file_id: int) -> bool:
     delete_file_chunks(file_id)
     response = supabase.table("session_files").delete().eq("file_id", file_id).execute()
+    supabase.table("files").delete().eq("id", file_id).execute()
     return bool(response.data)
 
 
