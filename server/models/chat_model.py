@@ -109,6 +109,7 @@ def create_file_chunks(file_id: int, chunks: List[Dict]) -> bool:
         chunk_records.append({
             "session_id": chunk.get("session_id"),
             "file_id": file_id,
+            "file_name": chunk.get("file_name", "unknown"),
             "chunk_index": chunk.get("chunk_index"),
             "text": chunk.get("text"),
             "embedding_model": chunk.get("embedding_model", "all-MiniLM-L6-v2"),
