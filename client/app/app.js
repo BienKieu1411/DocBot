@@ -1131,24 +1131,34 @@ class DocBotApp {
     }
 
     async openDefaultOrCreate() {
-        // Try to find existing default "New chat" in history, prefer the newest one
+        // Prefer an existing default chat (no files). If none, create a new one.
         const chats = await this.loadChatHistory();
         if (Array.isArray(chats) && chats.length > 0) {
-            const defaultChats = chats.filter(c => (c.title || '').toLowerCase() === 'new chat');
-            const target = defaultChats[0] || chats[0];
-            if (target) {
-                this.currentChatId = target.id;
-                await this.loadChat(target);
-                const list = document.getElementById('historyList');
-                if (list) {
-                    list.querySelectorAll('li').forEach(x => x.classList.remove('active'));
-                    const li = list.querySelector(`li[data-id="${this.currentChatId}"]`);
-                    if (li) li.classList.add('active');
+            // Find the newest chat with zero files
+            for (const c of chats) {
+                let isDefault = false;
+                try {
+                    const filesRes = await apiClient.getChatFiles(c.id);
+                    const files = filesRes.data || [];
+                    isDefault = !files || files.length === 0;
+                } catch (e) {
+                    // If the API returns an error (e.g., 404), treat as no files
+                    isDefault = true;
                 }
-                return;
+                if (isDefault) {
+                    this.currentChatId = c.id;
+                    await this.loadChat(c);
+                    const list = document.getElementById('historyList');
+                    if (list) {
+                        list.querySelectorAll('li').forEach(x => x.classList.remove('active'));
+                        const li = list.querySelector(`li[data-id="${this.currentChatId}"]`);
+                        if (li) li.classList.add('active');
+                    }
+                    return;
+                }
             }
         }
-        // Fallback: no chat exists, create a new one
+        // No existing default chat found → create new default chat and switch to it
         await this.startNewChatSession();
     }
 }
