@@ -358,20 +358,21 @@ class DocBotApp {
             fileInfo.appendChild(fileList);
         }
 
+        // Summary text
         if (this.uploadedFiles.length === 1) {
             fileName.textContent = this.uploadedFiles[0].name;
             fileSize.textContent = `${(this.uploadedFiles[0].size / 1024 / 1024).toFixed(2)} MB`;
-            fileList.innerHTML = '';
         } else {
             fileName.textContent = this.uploadedFiles.length > 0 ? 'Files' : '';
             fileSize.textContent = '';
-            fileList.innerHTML = this.uploadedFiles.map(f => {
-                const mb = f.size ? (f.size / 1024 / 1024).toFixed(2) : '';
-                const link = f.file_url ? `<a class="file-link" href="${f.file_url}" target="_blank" rel="noopener noreferrer">${f.name}</a>` : `<span class="file-item-name">${f.name}</span>`;
-                const delBtn = f.id ? `<button class="file-delete" data-file-id="${f.id}" title="Remove file">&times;</button>` : '';
-                return `<div class="file-item" data-file-id="${f.id || ''}">${link}<span class="file-item-size">${mb ? `${mb} MB` : ''}</span>${delBtn}</div>`;
-            }).join('');
         }
+        // Always render list items so files are clickable (even when only one)
+        fileList.innerHTML = this.uploadedFiles.map(f => {
+            const mb = f.size ? (f.size / 1024 / 1024).toFixed(2) : '';
+            const link = f.file_url ? `<a class="file-link" href="${f.file_url}" target="_blank" rel="noopener noreferrer">${f.name}</a>` : `<span class="file-item-name">${f.name}</span>`;
+            const delBtn = f.id ? `<button class="file-delete" data-file-id="${f.id}" title="Remove file">&times;</button>` : '';
+            return `<div class="file-item" data-file-id="${f.id || ''}">${link}<span class="file-item-size">${mb ? `${mb} MB` : ''}</span>${delBtn}</div>`;
+        }).join('');
 
         fileInfo.classList.add('show');
 
@@ -898,7 +899,7 @@ class DocBotApp {
                     <span class="chat-meta">${new Date(chat.updated_at || chat.created_at).toLocaleString()}</span>
                     <div class="chat-actions">
                         <button class="btn-rename" onclick="event.stopPropagation(); app.renameChatInline('${chat.id}')">Rename</button>
-                        <button class="btn-delete" onclick="event.stopPropagation(); app.confirmDeleteChatInline('${chat.id}')">Delete</button>
+                        <button class="btn-delete" onclick="event.stopPropagation(); app.deleteChat('${chat.id}')">Delete</button>
                     </div>
                 </div>
             `;
@@ -961,38 +962,7 @@ class DocBotApp {
         input.select();
     }
 
-    confirmDeleteChatInline(chatId) {
-        const list = document.getElementById('historyList');
-        if (!list) return;
-        const li = list.querySelector(`li[data-id="${chatId}"]`);
-        if (!li) return;
-        if (li.querySelector('.delete-confirm')) return;
-        const confirmWrap = document.createElement('div');
-        confirmWrap.className = 'delete-confirm';
-        confirmWrap.style.display = 'inline-flex';
-        confirmWrap.style.gap = '8px';
-        confirmWrap.style.marginLeft = '8px';
-        const text = document.createElement('span');
-        text.textContent = 'Delete this chat?';
-        const yesBtn = document.createElement('button');
-        yesBtn.textContent = 'Yes';
-        yesBtn.className = 'btn-small';
-        const noBtn = document.createElement('button');
-        noBtn.textContent = 'No';
-        noBtn.className = 'btn-small';
-        confirmWrap.appendChild(text);
-        confirmWrap.appendChild(yesBtn);
-        confirmWrap.appendChild(noBtn);
-        const actions = li.querySelector('.chat-actions');
-        actions.appendChild(confirmWrap);
-        const cleanup = () => confirmWrap.remove();
-        noBtn.onclick = (e) => { e.preventDefault(); cleanup(); };
-        yesBtn.onclick = async (e) => {
-            e.preventDefault();
-            cleanup();
-            await this.deleteChat(chatId);
-        };
-    }
+    // Removed confirmDeleteChatInline: delete now happens immediately from history action
 
     async loadChat(chat) {
         this.clearChatMessages();
