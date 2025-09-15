@@ -539,14 +539,26 @@ class DocBotApp {
         try {
             await this.ensureChatSession();
             if (!this.firstUserMessageRenamed) {
-                const newTitle = message.slice(0, 60);
-                await apiClient.renameChat(this.currentChatId, newTitle);
-                this.firstUserMessageRenamed = true;
-                // Visual pulse on active history item
-                const activeLi = document.querySelector(`#historyList li[data-id="${this.currentChatId}"]`);
-                if (activeLi) { activeLi.classList.add('pulse'); setTimeout(() => activeLi.classList.remove('pulse'), 700); }
-                // Refresh history
-                await this.loadChatHistory();
+                // Verify from server whether title is still default before renaming
+                let shouldRename = true;
+                try {
+                    const sessionRes = await apiClient.getChatSession(this.currentChatId);
+                    const srvTitle = (sessionRes?.data?.session_name || sessionRes?.data?.title || '').trim().toLowerCase();
+                    shouldRename = (srvTitle === 'new chat');
+                } catch (_) {
+                    // If we cannot retrieve session title, do not force rename to avoid overwriting a custom title
+                    shouldRename = false;
+                }
+                if (shouldRename) {
+                    const newTitle = message.slice(0, 60);
+                    await apiClient.renameChat(this.currentChatId, newTitle);
+                    this.firstUserMessageRenamed = true;
+                    // Visual pulse on active history item
+                    const activeLi = document.querySelector(`#historyList li[data-id="${this.currentChatId}"]`);
+                    if (activeLi) { activeLi.classList.add('pulse'); setTimeout(() => activeLi.classList.remove('pulse'), 700); }
+                    // Refresh history
+                    await this.loadChatHistory();
+                }
             }
         } catch {}
         this.addMessage(message, 'user');
