@@ -48,6 +48,7 @@ def db_update_password(user_id: int, hashed_password: str) -> Optional[Dict]:
 def db_create_refresh_token(user_id: int) -> Optional[str]:
     try:
         db_cleanup_expired_refresh_tokens()
+        supabase.table("refresh_tokens").delete().eq("user_id", user_id).execute()
         token = secrets.token_urlsafe(64)
         expires_at = (datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)).isoformat()
         supabase.table("refresh_tokens").insert({
