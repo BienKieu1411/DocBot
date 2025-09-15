@@ -353,6 +353,8 @@ class DocBotApp {
     processFiles(fileList) {
         if (!fileList || fileList.length === 0) return;
         
+        const MAX_FILE_SIZE_MB = 20;
+        const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
         const allowedMimeTypes = [
             'application/pdf',
             'application/msword',
@@ -368,6 +370,11 @@ class DocBotApp {
         for (let i = 0; i < fileList.length; i++) {
             const file = fileList[i];
             const fileExt = (file.name.split('.').pop() || '').toLowerCase();
+            // Size limit check
+            if (file.size > MAX_FILE_SIZE_BYTES) {
+                this.updateStatus('error', `File "${file.name}" is too large. Maximum allowed size is ${MAX_FILE_SIZE_MB} MB.`);
+                continue;
+            }
             
             if (!allowedMimeTypes.includes(file.type) && !allowedExtensions.includes(fileExt)) {
                 this.updateStatus('error', `File "${file.name}" type not supported. Please choose PDF, DOC/DOCX, TXT, MD, RTF, ODT.`);
@@ -598,7 +605,11 @@ class DocBotApp {
             } catch (err) {
                 // Remove failed file from UI and notify user
                 const failedName = f?.name || 'the file';
-                const msg = `I could not read "${failedName}" due to an internal error. Please try uploading a different file.`;
+                const errMsg = String(err?.message || '').toLowerCase();
+                const isTooLarge = errMsg.includes('file too large') || errMsg.includes('413');
+                const msg = isTooLarge
+                    ? `"${failedName}" is too large. The maximum allowed size is 20 MB. Please upload a smaller file.`
+                    : `I could not read "${failedName}" due to an internal error. Please try uploading a different file.`;
                 this.addMessage(msg, 'bot');
                 try { await apiClient.createChatMessage(this.currentChatId, 'bot', msg); } catch {}
                 this.uploadedFiles = this.uploadedFiles.filter(x => x !== f);

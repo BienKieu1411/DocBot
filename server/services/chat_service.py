@@ -282,7 +282,21 @@ def delete_file_from_session(file_id: int) -> bool:
 
 
 def upload_file(user_id: int, session_id: int, uploaded_file: UploadFile) -> Dict:
-    res = chat_model.upload_file(user_id, uploaded_file)
+    MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024  # 20 MB
+    content = uploaded_file.file.read()
+    if content is None:
+        raise HTTPException(status_code=400, detail="Empty file upload")
+    if len(content) > MAX_FILE_SIZE_BYTES:
+        raise HTTPException(status_code=413, detail="File too large. Maximum allowed size is 20 MB")
+
+    class _PatchedUploadFile:
+        def __init__(self, original: UploadFile, content_bytes: bytes):
+            self.filename = original.filename
+            self.file = type('F', (), {'read': lambda self2: content_bytes})()
+            self.content_type = original.content_type
+
+    patched_upload = _PatchedUploadFile(uploaded_file, content)
+    res = chat_model.upload_file(user_id, patched_upload)
     if not res or "id" not in res:
         raise HTTPException(status_code=500, detail="File upload failed")
 
