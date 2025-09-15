@@ -16,6 +16,7 @@ class DocBotApp {
         this.firstUserMessageRenamed = false; // rename session after first user message
         this._fileListHandlersBound = false; // avoid duplicate listeners
         this._startingNewChat = false; // guard to prevent duplicate session creation
+        this._suppressSignInAutoOpen = true; // suppress first SIGNED_IN auto-open on initial load
         this.initAuthAndApp();
     }
 
@@ -47,6 +48,39 @@ class DocBotApp {
                     // Always use authManager.currentUser for info
                     this.currentUser = this.authManager.currentUser;
                     this.updateUserInterface();
+                    // After a true sign-in (not initial page load), prefer to open a default chat; if none exist, create one
+                    if (this._suppressSignInAutoOpen) { this._suppressSignInAutoOpen = false; return; }
+                    setTimeout(async () => {
+                        try {
+                            const chats = await this.loadChatHistory();
+                            if (Array.isArray(chats) && chats.length > 0) {
+                                // Find newest default (no files) chat
+                                let opened = false;
+                                for (const c of chats) {
+                                    try {
+                                        const filesRes = await apiClient.getChatFiles(c.id);
+                                        const files = filesRes.data || [];
+                                        if (!files || files.length === 0) {
+                                            await this.loadChat(c);
+                                            const list = document.getElementById('historyList');
+                                            if (list) {
+                                                list.querySelectorAll('li').forEach(x => x.classList.remove('active'));
+                                                const li = list.querySelector(`li[data-id="${c.id}"]`);
+                                                if (li) li.classList.add('active');
+                                            }
+                                            opened = true;
+                                            break;
+                                        }
+                                    } catch {}
+                                }
+                                if (!opened) {
+                                    await this.openDefaultOrCreate();
+                                }
+                            } else {
+                                await this.openDefaultOrCreate();
+                            }
+                        } catch (e) { console.warn('Post-sign-in open default chat failed:', e); }
+                    }, 0);
                 }
             });
         } else {
@@ -68,21 +102,25 @@ class DocBotApp {
         const chats = await this.loadChatHistory();
         this.initializeEventListeners();
         this.setupAutoResize();
-        // Open newest existing chat if available; otherwise create a new one
+        // On reload, restore the last active chat if it still exists; if none exist at all, create a default chat silently
         try {
-            if (Array.isArray(chats) && chats.length > 0) {
-                this.currentChatId = chats[0].id;
-                await this.loadChat(chats[0]);
-                const list = document.getElementById('historyList');
-                if (list) {
-                    list.querySelectorAll('li').forEach(x => x.classList.remove('active'));
-                    const li = list.querySelector(`li[data-id="${this.currentChatId}"]`);
-                    if (li) li.classList.add('active');
+            const lastId = localStorage.getItem('lastChatId');
+            if (lastId && Array.isArray(chats) && chats.length > 0) {
+                const target = chats.find(c => String(c.id) === String(lastId));
+                if (target) {
+                    await this.loadChat(target);
+                    const list = document.getElementById('historyList');
+                    if (list) {
+                        list.querySelectorAll('li').forEach(x => x.classList.remove('active'));
+                        const li = list.querySelector(`li[data-id="${target.id}"]`);
+                        if (li) li.classList.add('active');
+                    }
                 }
-            } else {
-                await this.startNewChatSession();
+            } else if (Array.isArray(chats) && chats.length === 0) {
+                // Create a default chat in the background, but keep Welcome visible
+                await this.createDefaultChatSilently();
             }
-        } catch (e) { console.warn('Init open chat failed:', e); }
+        } catch (e) { console.warn('Init restore chat failed:', e); }
     }
 
     updateUserInterface() {
@@ -462,22 +500,30 @@ class DocBotApp {
             console.warn('Processing/upload error:', e);
         } finally {
             processingIndicator.classList.remove('show');
-            this.filesUploaded = true;
             this.isProcessing = false;
+            const hasFiles = Array.isArray(this.uploadedFiles) && this.uploadedFiles.length > 0;
+            this.filesUploaded = hasFiles;
             const messageInput = document.getElementById('messageInput');
             const sendBtn = document.getElementById('sendBtn');
-            messageInput.disabled = false;
-            sendBtn.disabled = false;
-            messageInput.placeholder = 'Type your question about the documents...';
-            statusIndicator.className = 'status-indicator ready';
-            statusIndicator.innerHTML = '<i class="fas fa-check-circle"></i> Ready';
             const welcomeScreen = document.getElementById('welcomeScreen');
-            if (welcomeScreen) welcomeScreen.style.display = 'none';
-            const fileText = this.uploadedFiles.length === 1 ? 'document' : 'documents';
-            const readyMsg = `Your ${fileText} ${this.uploadedFiles.length === 1 ? 'is' : 'are'} ready. Ask me anything about ${this.uploadedFiles.length === 1 ? 'it' : 'them'}.`;
-            this.addMessage(readyMsg, 'bot');
-            // Persist bot message (requirement #8)
-            try { await apiClient.createChatMessage(this.currentChatId, 'bot', readyMsg); } catch {}
+            if (hasFiles) {
+                if (messageInput) { messageInput.disabled = false; messageInput.placeholder = 'Type your question about the documents...'; }
+                if (sendBtn) sendBtn.disabled = false;
+                statusIndicator.className = 'status-indicator ready';
+                statusIndicator.innerHTML = '<i class="fas fa-check-circle"></i> Ready';
+                if (welcomeScreen) welcomeScreen.style.display = 'none';
+                const fileText = this.uploadedFiles.length === 1 ? 'document' : 'documents';
+                const readyMsg = `Your ${fileText} ${this.uploadedFiles.length === 1 ? 'is' : 'are'} ready. Ask me anything about ${this.uploadedFiles.length === 1 ? 'it' : 'them'}.`;
+                this.addMessage(readyMsg, 'bot');
+                try { await apiClient.createChatMessage(this.currentChatId, 'bot', readyMsg); } catch {}
+            } else {
+                if (messageInput) { messageInput.disabled = true; messageInput.placeholder = 'Upload documents to start chatting...'; }
+                if (sendBtn) sendBtn.disabled = true;
+                statusIndicator.className = 'status-indicator waiting';
+                statusIndicator.innerHTML = '<i class="fas fa-clock"></i> Waiting for documents';
+                // keep welcome screen visible
+                if (welcomeScreen) welcomeScreen.style.display = 'flex';
+            }
         }
     }    
     async sendMessage() {
@@ -527,15 +573,24 @@ class DocBotApp {
         const filesToUpload = this.uploadedFiles.filter(f => f.file && !f.file_url);
         if (!filesToUpload.length) return;
         const uploadedNames = [];
-        for (const f of filesToUpload) {
-            const uploaded = await apiClient.uploadFileToSession(this.currentChatId, f.file);
-            // uploaded.data contains file record { id, db_response: [ { filename, file_url, file_type, file_size, id } ] }
-            const info = uploaded?.data?.db_response?.[0] || {};
-            f.id = uploaded?.data?.id || info.id || f.id;
-            f.file_url = info.file_url || f.file_url || null;
-            f.type = f.type || info.file_type || f.file?.type || '';
-            f.size = f.size || info.file_size || f.file?.size || 0;
-            uploadedNames.push(f.name || info.filename || `file_${f.id || ''}`);
+        for (const f of [...filesToUpload]) {
+            try {
+                const uploaded = await apiClient.uploadFileToSession(this.currentChatId, f.file);
+                // uploaded.data contains file record { id, db_response: [ { filename, file_url, file_type, file_size, id } ] }
+                const info = uploaded?.data?.db_response?.[0] || {};
+                f.id = uploaded?.data?.id || info.id || f.id;
+                f.file_url = info.file_url || f.file_url || null;
+                f.type = f.type || info.file_type || f.file?.type || '';
+                f.size = f.size || info.file_size || f.file?.size || 0;
+                uploadedNames.push(f.name || info.filename || `file_${f.id || ''}`);
+            } catch (err) {
+                // Remove failed file from UI and notify user
+                const failedName = f?.name || 'the file';
+                const msg = `I could not read "${failedName}" due to an internal error. Please try uploading a different file.`;
+                this.addMessage(msg, 'bot');
+                try { await apiClient.createChatMessage(this.currentChatId, 'bot', msg); } catch {}
+                this.uploadedFiles = this.uploadedFiles.filter(x => x !== f);
+            }
         }
         this.updateFileDisplay();
         return uploadedNames;
@@ -725,6 +780,7 @@ class DocBotApp {
             }
             const created = await apiClient.createChat('New chat');
             this.currentChatId = created.data.id;
+            try { localStorage.setItem('lastChatId', String(this.currentChatId)); } catch {}
 
             // Load messages to check if greeting exists
             let hasMessages = false;
@@ -997,6 +1053,7 @@ class DocBotApp {
         const chatMessages = document.getElementById('chatMessages');
         this.chatHistory = [];
         this.currentChatId = chat.id;
+        try { localStorage.setItem('lastChatId', String(this.currentChatId)); } catch {}
         this.firstUserMessageRenamed = true; // assume already named if in history
         // Immediately reset file UI to avoid bleed from previous chat
         this.uploadedFiles = [];
@@ -1113,6 +1170,7 @@ class DocBotApp {
         // Create with default title (requirement #7)
         const created = await apiClient.createChat('New chat');
         this.currentChatId = created.data.id;
+    try { localStorage.setItem('lastChatId', String(this.currentChatId)); } catch {}
         // Greeting bot message if empty (requirement #8)
         let hasMessages = false;
         try {
@@ -1128,6 +1186,19 @@ class DocBotApp {
             this.addMessage(greet, 'bot');
         }
         return this.currentChatId;
+    }
+
+    async createDefaultChatSilently() {
+        try {
+            if (!this.authManager || !this.authManager.isLoggedIn()) return;
+            const created = await apiClient.createChat('New chat');
+            const newId = created.data.id;
+            try { localStorage.setItem('lastChatId', String(newId)); } catch {}
+            // Just refresh history; do not navigate away from welcome screen
+            await this.loadChatHistory();
+        } catch (e) {
+            console.warn('Silent default chat creation failed:', e);
+        }
     }
 
     async openDefaultOrCreate() {

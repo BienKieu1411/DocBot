@@ -335,11 +335,12 @@ body.dark .header-action-buttons .btn-small:hover {
 
 /* file list styles */
 .file-list { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
-.file-item { display: flex; align-items: center; gap: 10px; padding: 6px 8px; background: rgba(15,23,42,0.03); border-radius: 8px; }
+.file-item { display: flex; align-items: center; gap: 10px; padding: 6px 8px; background: rgba(15,23,42,0.03); border-radius: 8px; overflow: hidden; }
 .file-item .file-link { color: #334155; text-decoration: none; font-weight: 500; }
+.file-item .file-link, .file-item .file-item-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-item .file-link:hover { text-decoration: underline; }
-.file-item .file-item-size { margin-left: auto; color: #64748b; font-size: 12px; }
-.file-item .file-delete { margin-left: 6px; background: transparent; border: none; color: #ef4444; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 6px; }
+.file-item .file-item-size { margin-left: auto; color: #64748b; font-size: 12px; flex: 0 0 auto; }
+.file-item .file-delete { margin-left: 6px; background: transparent; border: none; color: #ef4444; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 6px; flex: 0 0 auto; }
 .file-item .file-delete:hover { color: #dc2626; transform: scale(1.05); }
 
 /* inline rename/delete controls */
