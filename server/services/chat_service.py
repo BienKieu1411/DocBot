@@ -149,6 +149,8 @@ def create_faiss_index_for_file(session_id: int, file_id: int, embedding_model_n
         os.unlink(tmp_path)
         if not text.strip():
             return False
+        
+        file_name = file_info.get("filename")
 
         chunks = chunk_text(text, chunk_size=200, overlap=20)
         embeddings = get_embeddings(chunks)
@@ -162,6 +164,7 @@ def create_faiss_index_for_file(session_id: int, file_id: int, embedding_model_n
             chunk_records.append({
                 "session_id": session_id,
                 "file_id": file_id,
+                "file_name": file_name,
                 "chunk_index": idx,
                 "text": chunk,
                 "embedding": emb.tolist(),
@@ -242,7 +245,10 @@ def process_user_message(session_id: int, message: str) -> Dict:
     similar_chunks = search_similar_chunks(session_id, query_embedding, top_k=3)
 
     if similar_chunks:
-        context = "\n\n".join([chunk["text"] for chunk in similar_chunks])
+        context = "\n\n".join([
+            f"[From {chunk.get('file_name', 'unknown')}]: {chunk['text']}"
+            for chunk in similar_chunks
+        ])
     else:
         context = "No relevant documents were found in this session."
 
@@ -250,15 +256,17 @@ def process_user_message(session_id: int, message: str) -> Dict:
 User asks:
 {message}
 
-Based on the following documents:
+From the following documents (with file names shown):
 {context}
 
-Requirements:
-- Provide a detailed and easy-to-understand answer.
-- Respond in the user's language.
-- Only rely on the provided documents; do not make up information.
-- If the information is not found, respond: 'No information found in the documents.'
+Instructions:
+- Mention the file name when citing information.
+- Give a short but complete answer (concise, clear, not too long).
+- Reply in the user's language.
+- Only use the provided documents; do not add outside info.
+- If nothing is relevant, reply: "No information found in the documents."
 """
+
     answer = call_llm_api(prompt)
     chat_model.create_chat_message(session_id, "bot", answer)
 

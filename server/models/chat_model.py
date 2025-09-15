@@ -4,6 +4,7 @@ from typing import Optional, Dict, List
 import dotenv
 from fastapi import UploadFile
 import os
+import uuid
 
 dotenv.load_dotenv()
 BUCKET_NAME = os.getenv("SUPABASE_BUCKET", "uploads")
@@ -168,7 +169,8 @@ def get_chat_session_not_have_file(user_id: int) -> Optional[Dict]:
 
 
 def upload_file(user_id: int, uploaded_file: UploadFile) -> Dict:
-    storage_path = f"{user_id}/{uploaded_file.filename}"
+    unique_id = uuid.uuid4().hex
+    storage_path = f"{user_id}/{unique_id}_{uploaded_file.filename}"    
     content = uploaded_file.file.read()
     res = supabase.storage.from_(BUCKET_NAME).upload(storage_path, content, {"content-type": uploaded_file.content_type, "upsert": "true"})
     if not res or (isinstance(res, dict) and res.get("error")):
@@ -184,7 +186,6 @@ def upload_file(user_id: int, uploaded_file: UploadFile) -> Dict:
     db_res = supabase.table("files").insert(file_record).execute()
     file_id = db_res.data[0]["id"] if db_res.data else None
     return {"id": file_id, "db_response": db_res.data}
-
 
 def link_file_to_session(session_id: int, file_id: int) -> bool:
     now = datetime.now(timezone.utc).isoformat()
