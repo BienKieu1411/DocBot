@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Response, Request
 from pydantic import BaseModel, EmailStr
 from auth import get_current_user
 from controllers.user_controller import (
@@ -54,8 +54,10 @@ def login(data: LoginRequest, response: Response):
     return login_controller(data.email, data.password, response)
 
 @router.post("/refresh-token")
-def refresh_token(response: Response, data: RefreshTokenRequest):
-    return refresh_token_controller(data.refresh_token, response)
+def refresh_token(response: Response, data: RefreshTokenRequest, request: Request):
+    # Prefer explicit body param, fallback to HttpOnly cookie for browser flows
+    token = data.refresh_token or request.cookies.get("refresh_token")
+    return refresh_token_controller(token, response)
 
 @router.post("/forgot-password")
 def forgot_password(data: ForgotPasswordRequest):
