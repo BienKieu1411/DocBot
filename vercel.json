@@ -1,0 +1,34 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "server/app.py",
+      "use": "@vercel/python",
+      "config": {
+        "runtime": "python3.11"
+      }
+    },
+    {
+      "src": "client/**",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/chat/(.*)",
+      "dest": "server/app.py"
+    },
+    {
+      "src": "/user/(.*)",
+      "dest": "server/app.py"
+    },
+    {
+      "src": "/health",
+      "dest": "server/app.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/client/$1"
+    }
+  ]
+}

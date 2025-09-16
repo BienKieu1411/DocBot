@@ -2,7 +2,8 @@ class APIClient {
     constructor() {
         const globalBase = (typeof window !== 'undefined' && (window.API_BASE_URL || window.__API_BASE_URL__)) || null;
         const inferredLocal = (typeof window !== 'undefined') ? `${window.location.protocol}//${window.location.hostname}${window.location.port ? ':' + window.location.port : ''}` : null;
-        this.baseURL = globalBase || (inferredLocal && inferredLocal !== 'file://' ? inferredLocal.replace(/:\d+$/, ':8000').replace('http://', 'https://') : 'https://localhost:8000');
+        // this.baseURL = globalBase || (inferredLocal && inferredLocal !== 'file://' ? inferredLocal.replace(/:\d+$/, ':8000').replace('http://', 'https://') : 'https://localhost:8000');
+        this.baseURL = '';
     }
 
     async request(endpoint, options = {}) {
