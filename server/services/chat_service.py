@@ -2,7 +2,6 @@ import time
 import numpy as np
 from typing import Optional, Dict, List
 from fastapi import HTTPException, UploadFile
-from sentence_transformers import SentenceTransformer
 from docx import Document
 import pdfplumber
 from dotenv import load_dotenv

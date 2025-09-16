@@ -11,3 +11,4 @@ pillow
 groq
 gradio_client
 email-validator>=2.0.0
+numpy
