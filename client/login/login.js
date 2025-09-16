@@ -260,7 +260,7 @@ class LoginManager {
 
 
     redirectToApp() {
-    window.location.href = '../app/index.html';
+        window.location.href = '/app';
     }
 
     async handlePasswordResetSendFromConfirm() {

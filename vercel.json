@@ -5,7 +5,10 @@
       "src": "server/app.py",
       "use": "@vercel/python",
       "config": {
-        "runtime": "python3.11"
+        "runtime": "python3.11",
+        "includeFiles": [
+          "server/**"
+        ]
       }
     },
     {
@@ -18,15 +21,16 @@
     { "src": "/user/(.*)", "dest": "/server/app.py" },
     { "src": "/health", "dest": "/server/app.py" },
 
-    { "src": "/login", "dest": "/client/login/index.html" },
-    { "src": "/login/(.*)", "dest": "/client/login/$1" },
-
-    { "src": "/$", "dest": "/client/app/index.html" },
+  { "src": "/$", "dest": "/client/login/index.html" },
+  { "src": "/login$", "dest": "/client/login/index.html" },
+  { "src": "/login/(.*)", "dest": "/client/login/$1" },
+  { "src": "/login.css", "dest": "/client/login/login.css" },
+  { "src": "/login.js", "dest": "/client/login/login.js" },
     { "src": "/app(/)?$", "dest": "/client/app/index.html" },
     { "src": "/app/(.*)", "dest": "/client/app/$1" },
 
-  { "src": "/app.css", "dest": "/client/app/app.css" },
-  { "src": "/app.js", "dest": "/client/app/app.js" },
+    { "src": "/app.css", "dest": "/client/app/app.css" },
+    { "src": "/app.js", "dest": "/client/app/app.js" },
     { "src": "/shared/(.*)", "dest": "/client/shared/$1" },
 
     { "src": "/(.*)", "dest": "/client/$1" }
