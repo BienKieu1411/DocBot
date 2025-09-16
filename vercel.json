@@ -14,22 +14,21 @@
     }
   ],
   "routes": [
-    {
-      "src": "/chat/(.*)",
-      "dest": "server/app.py"
-    },
-    {
-      "src": "/user/(.*)",
-      "dest": "server/app.py"
-    },
-    {
-      "src": "/health",
-      "dest": "server/app.py"
-    },
-        { "src": "/login", "dest": "/client/login/index.html" },
-    {
-      "src": "/(.*)",
-      "dest": "/client/$1"
-    }
+    { "src": "/chat/(.*)", "dest": "/server/app.py" },
+    { "src": "/user/(.*)", "dest": "/server/app.py" },
+    { "src": "/health", "dest": "/server/app.py" },
+
+    { "src": "/login", "dest": "/client/login/index.html" },
+    { "src": "/login/(.*)", "dest": "/client/login/$1" },
+
+    { "src": "/$", "dest": "/client/app/index.html" },
+    { "src": "/app(/)?$", "dest": "/client/app/index.html" },
+    { "src": "/app/(.*)", "dest": "/client/app/$1" },
+
+  { "src": "/app.css", "dest": "/client/app/app.css" },
+  { "src": "/app.js", "dest": "/client/app/app.js" },
+    { "src": "/shared/(.*)", "dest": "/client/shared/$1" },
+
+    { "src": "/(.*)", "dest": "/client/$1" }
   ]
 }
