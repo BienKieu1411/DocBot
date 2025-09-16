@@ -10,6 +10,9 @@ import tempfile
 import requests
 import os
 import ast
+from PIL import Image
+import pytesseract
+from pdf2image import convert_from_path
 
 import models.chat_model as chat_model
 
@@ -103,23 +106,49 @@ def update_chat_session(session_id: int, new_name: str) -> Dict:
         raise HTTPException(status_code=404, detail="Session not found")
     return result
 
-
 def read_pdf(path: str) -> str:
     text = ""
-    with pdfplumber.open(path) as pdf:
-        for page in pdf.pages:
-            t = page.extract_text()
-            if t:
-                text += t + "\n"
-    return text
+    try:
+        with pdfplumber.open(path) as pdf:
+            for page in pdf.pages:
+                t = page.extract_text()
+                if t:
+                    text += t + "\n"
+    except:
+        pass
+
+    # Nếu pdf không có text (scan), fallback dùng OCR
+    if not text.strip():
+        images = convert_from_path(path)
+        for img in images:
+            text += pytesseract.image_to_string(img, lang='eng') + "\n"
+    return text.strip()
+
 
 def read_word(path: str) -> str:
-    doc = Document(path)
-    return "\n".join([p.text for p in doc.paragraphs])
+    text_parts = []
+    try:
+        doc = Document(path)
+        # Đọc paragraph
+        for p in doc.paragraphs:
+            if p.text.strip():
+                text_parts.append(p.text)
+        # Đọc table
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    if cell.text.strip():
+                        text_parts.append(cell.text)
+    except:
+        # Fallback OCR: mở bằng PIL rồi OCR nếu docx bị lỗi
+        pass
+    return "\n".join(text_parts).strip()
+
 
 def read_txt(path: str) -> str:
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
+
 
 def read_md(path: str) -> str:
     with open(path, "r", encoding="utf-8") as f:
