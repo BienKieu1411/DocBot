@@ -110,45 +110,42 @@ def read_pdf(path: str) -> str:
     text = ""
     try:
         with pdfplumber.open(path) as pdf:
-            for page in pdf.pages:
+            for page_num, page in enumerate(pdf.pages, start=1):
                 t = page.extract_text()
-                if t:
+                if t and t.strip():
                     text += t + "\n"
+                else:
+                    try:
+                        images = convert_from_path(path, first_page=page_num, last_page=page_num)
+                        for img in images:
+                            ocr_text = pytesseract.image_to_string(img, lang='eng')
+                            if ocr_text.strip():
+                                text += ocr_text + "\n"
+                    except:
+                        pass
     except:
         pass
-
-    # Nếu pdf không có text (scan), fallback dùng OCR
-    if not text.strip():
-        images = convert_from_path(path)
-        for img in images:
-            text += pytesseract.image_to_string(img, lang='eng') + "\n"
     return text.strip()
-
 
 def read_word(path: str) -> str:
     text_parts = []
     try:
         doc = Document(path)
-        # Đọc paragraph
         for p in doc.paragraphs:
             if p.text.strip():
                 text_parts.append(p.text)
-        # Đọc table
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
                     if cell.text.strip():
                         text_parts.append(cell.text)
     except:
-        # Fallback OCR: mở bằng PIL rồi OCR nếu docx bị lỗi
         pass
     return "\n".join(text_parts).strip()
-
 
 def read_txt(path: str) -> str:
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
-
 
 def read_md(path: str) -> str:
     with open(path, "r", encoding="utf-8") as f:
