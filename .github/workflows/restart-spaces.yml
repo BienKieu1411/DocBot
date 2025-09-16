@@ -1,0 +1,26 @@
+name: Restart HF Spaces weekly
+
+on:
+  schedule:
+    - cron: "0 0 */7 * *"   
+  workflow_dispatch:        
+
+jobs:
+  restart:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restart all spaces
+        run: |
+          for space in mental-health sentence-embedding; do
+            echo "Restarting BienKieu/$space..."
+            response=$(curl -s -o /dev/null -w "%{http_code}" \
+              -X POST -H "Authorization: Bearer ${{ secrets.HF_TOKEN }}" \
+              https://huggingface.co/api/spaces/BienKieu/$space/restart)
+            
+            if [ "$response" -eq 200 ]; then
+              echo "Restarted BienKieu/$space successfully"
+            else
+              echo "Failed to restart BienKieu/$space (status: $response)"
+              exit 1
+            fi
+          done

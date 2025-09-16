@@ -1,3 +1,4 @@
+import time
 import numpy as np
 from typing import Optional, Dict, List
 from fastapi import HTTPException, UploadFile
@@ -15,13 +16,34 @@ import models.chat_model as chat_model
 
 load_dotenv()
 
-embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+client_gradio = None
+MAX_RETRIES = 10
 
+def load_gradio_client():
+    global client_gradio
+    retries = 0
+    from gradio_client import Client as GradioClient
+    while retries < MAX_RETRIES and client_gradio is None:
+        try:
+            client_gradio = GradioClient("BienKieu/sentence-embedding")
+
+            client_gradio.predict("Test")
+        except Exception as e:
+            print(f"Gradio client load failed ({retries+1}/{MAX_RETRIES}):", e)
+            client_gradio = None
+            retries += 1
+            time.sleep(1)
+    if client_gradio is None:
+        print("Failed to load Gradio client after retries")
+
+load_gradio_client()
 
 def get_embeddings(texts):
-    return embedding_model.encode(
-        texts, convert_to_numpy=True, normalize_embeddings=True
-    )
+    if client_gradio is None:
+        raise RuntimeError("Gradio client is not available")
+    
+    res = client_gradio.predict(texts)  
+    return np.array(res)  
 
 
 def get_chat_sessions_by_user_id(user_id: int) -> list:
