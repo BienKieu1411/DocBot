@@ -1,4 +1,4 @@
-DocBot - Smart Document Assistant
+# DocBot - Smart Document Assistant
 
 DocBot is a document-aware chat application that implements Retrieval-Augmented Generation (RAG). Upload documents (PDF, DOCX/DOC, TXT, Markdown, RTF, ODT), then ask questions and get answers grounded in the uploaded content. The app extracts text, builds embeddings, retrieves relevant chunks, and generates concise answers with source snippets.
 
