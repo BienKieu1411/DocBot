@@ -26,6 +26,7 @@
       "src": "/health",
       "dest": "server/app.py"
     },
+        { "src": "/login", "dest": "/client/login/index.html" },
     {
       "src": "/(.*)",
       "dest": "/client/$1"
